@@ -209,8 +209,8 @@ class MainMenu(AsyncScreen):
             self.open_sources()
             return
         if key == "live":
-            from .browse import LiveCategoriesScreen
-            screen = LiveCategoriesScreen
+            from .browse import LiveBrowserScreen
+            screen = LiveBrowserScreen
         elif key == "movies":
             from .browse import VodCategoriesScreen
             screen = VodCategoriesScreen

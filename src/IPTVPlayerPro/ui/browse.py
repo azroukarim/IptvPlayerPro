@@ -5,13 +5,18 @@ from __future__ import absolute_import
 
 import os
 
+from Components.ActionMap import HelpableActionMap
+from Components.Label import Label
+from Components.Pixmap import Pixmap
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 
 from ..core.backends import source_label
 from ..core.i18n import _
 from ..core.util import human_count, safe_int, to_text
-from .base import (ListScreen, info_box, pixmap, play_url, row_entry)
+from .base import (AsyncScreen, ListScreen, LiveList, category_entry,
+                   channel_entry, info_box, pixmap, play_url, row_entry)
 from .info import InfoScreen
+from .skins import LIVE_SKIN
 
 
 class BackendScreen(ListScreen):
@@ -228,6 +233,471 @@ class LiveScreen(BackendScreen):
     def key_blue(self):
         self.query = u""
         self.reload_backend()
+
+
+class LiveBrowserScreen(BackendScreen):
+    """Three-column live TV browser.
+
+    The layout intentionally follows the supplied Ibo Player Pro mock-up:
+    categories on the left, numbered channels in the middle and a preview
+    pane on the right.  It uses the same backend calls as the old two-screen
+    flow, so M3U and MAG portals keep working unchanged.
+    """
+
+    skin = LIVE_SKIN
+
+    def __init__(self, session, store, backend):
+        AsyncScreen.__init__(self, session)
+        self.skinName = "IPTVProLive"
+        self.store = store
+        self.backend = backend
+        self.started = False
+        self.query = u""
+        self.page = 1
+        self.total = 0
+        self.categories = []
+        self.items = []
+        self.category_id = "all"
+        self.focus = "categories"
+        self._channel_request = 0
+
+        self["bg"] = Pixmap()
+        self["header"] = Pixmap()
+        self["logo"] = Pixmap()
+        self["navLive"] = Label()
+        self["navMovies"] = Label()
+        self["navSeries"] = Label()
+        self["searchPill"] = Pixmap()
+        self["searchText"] = Label()
+        self["status"] = Label()
+        self["source"] = Label()
+        self["leftPanel"] = Pixmap()
+        self["midPanel"] = Pixmap()
+        self["rightPanel"] = Pixmap()
+        self["catHeader"] = Label()
+        self["categories"] = LiveList(52)
+        self["chHeader"] = Label()
+        self["channels"] = LiveList(52)
+        self["preview"] = Pixmap()
+        self["previewKind"] = Label()
+        self["previewLogo"] = Pixmap()
+        self["previewName"] = Label()
+        self["previewMeta"] = Label()
+        self["previewUrl"] = Label()
+        self["previewFav"] = Label()
+        self["playBg"] = Pixmap()
+        self["playLabel"] = Label()
+        self["favBg"] = Pixmap()
+        self["favLabel"] = Label()
+        self["hint"] = Label()
+
+        self["actions"] = HelpableActionMap(self, [
+            "NavigationActions", "OkCancelActions", "ColorActions", "MenuActions",
+        ], {
+            "up": self.key_up,
+            "down": self.key_down,
+            "pageUp": self.key_page_up,
+            "pageDown": self.key_page_down,
+            "top": self.key_top,
+            "bottom": self.key_bottom,
+            "left": self.key_left,
+            "right": self.key_right,
+            "ok": self.key_ok,
+            "cancel": self.key_back,
+            "red": self.key_red,
+            "green": self.key_green,
+            "yellow": self.key_yellow,
+            "blue": self.key_blue,
+            "menu": self.key_menu,
+        }, prio=0, description=_("IPTV Player Pro"))
+
+        self.onLayoutFinish.append(self._layout_ready)
+        self.onShown.append(self.shown_ready)
+
+    # -------------------------------------------------------------- layout
+    def _layout_ready(self):
+        self["bg"].instance.setPixmap(pixmap("live_bg.png"))
+        self["header"].instance.setPixmap(pixmap("live_header.png"))
+        self["logo"].instance.setPixmap(pixmap("logo_small.png"))
+        self["leftPanel"].instance.setPixmap(pixmap("live_panel_left.png"))
+        self["midPanel"].instance.setPixmap(pixmap("live_panel_mid.png"))
+        self["rightPanel"].instance.setPixmap(pixmap("live_panel_right.png"))
+        self["preview"].instance.setPixmap(pixmap("live_preview.png"))
+        self["searchPill"].instance.setPixmap(pixmap("live_search.png"))
+        self["playBg"].instance.setPixmap(pixmap("live_button.png"))
+        self["favBg"].instance.setPixmap(pixmap("live_button_dark.png"))
+
+        self["navLive"].setText(_("Live TV"))
+        self["navMovies"].setText(_("Movies"))
+        self["navSeries"].setText(_("Series"))
+        self["searchText"].setText(u"GREEN  " + _("Search channels"))
+        self["hint"].setText(_("OK play  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
+        self["playLabel"].setText(u"OK  " + _("Play"))
+        self["previewKind"].setText(_("CHANNEL PREVIEW"))
+        self["previewName"].setText(_("Live TV"))
+        self["previewMeta"].setText(u"")
+        self["previewUrl"].setText(u"")
+        self["previewFav"].setText(u"")
+        self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
+        self["status"].setText(u"")
+        self["source"].setText(u"")
+        self.update_source()
+        self.update_search_text()
+
+        for name in ("categories", "channels"):
+            try:
+                self[name].enableAutoNavigation(False)
+            except Exception:
+                pass
+
+        self.focus = "categories"
+        self.update_headers()
+        self.apply_focus()
+        self.update_preview()
+
+    # --------------------------------------------------------------- data
+    def build(self):
+        if self.backend is None:
+            return
+        self.update_source()
+        self.categories = self.backend.live_categories()
+        ids = [to_text(category.get("id")) for category in self.categories]
+        if self.category_id not in ids:
+            self.category_id = "all" if "all" in ids else (ids[0] if ids else "")
+        self.render_categories()
+        self.load_channels()
+
+    def render_categories(self):
+        entries = []
+        for category in self.categories:
+            entries.append(category_entry(
+                292, 52, category.get("name") or u"",
+                value=human_count(category.get("count")),
+            ))
+        self["categories"].setList(entries)
+        index = 0
+        for position, category in enumerate(self.categories):
+            if to_text(category.get("id")) == self.category_id:
+                index = position
+                break
+        if entries:
+            try:
+                self["categories"].setCurrentIndex(index)
+            except Exception:
+                pass
+        self.update_headers()
+
+    def _needs_async_channels(self):
+        return (
+            getattr(self.backend, "kind", "") == "mag"
+            and not getattr(self.backend, "channels", None)
+            and self.category_id not in ("all", "fav")
+        )
+
+    def load_channels(self, keep_key=None):
+        if self.backend is None:
+            self.items = []
+            self.render_channels()
+            return
+        self._channel_request += 1
+        request = self._channel_request
+        category_id = self.category_id
+        query = self.query
+        self.status_text(_("Loading ..."))
+
+        def done(items):
+            if request != self._channel_request:
+                return
+            self.items = list(items)
+            self.render_channels(keep_key)
+
+        def failed(error):
+            if request != self._channel_request:
+                return
+            self.status_text(u"")
+            self.show_error(error)
+
+        if self._needs_async_channels():
+            # Do not leave the previous category's channels selectable while
+            # the new MAG genre is still loading.
+            self.items = []
+            try:
+                self["channels"].setList([])
+            except Exception:
+                pass
+            self.update_headers()
+            self.update_preview()
+            network_timeout = safe_int(self.store.settings.get("timeout"), 20)
+            limit = max(45, network_timeout * 3 + 10)
+            self.run_async(
+                lambda: self.backend.live_items(category_id, query),
+                done, failed, timeout=limit,
+            )
+            return
+        try:
+            items = self.backend.live_items(category_id, query)
+        except Exception as error:  # noqa: BLE001
+            failed(error)
+            return
+        done(items)
+
+    def render_channels(self, keep_key=None):
+        entries = []
+        target = 0
+        for index, item in enumerate(self.items):
+            favorite = False
+            try:
+                favorite = self.backend.is_favorite(item)
+            except Exception:
+                pass
+            if keep_key and self._channel_key(item) == keep_key:
+                target = index
+            entries.append(channel_entry(
+                412, 52, item.get("number") or index + 1,
+                item.get("name") or u"", icon=self._channel_icon(item),
+                favorite=favorite,
+            ))
+        self["channels"].setList(entries)
+        if entries:
+            try:
+                self["channels"].setCurrentIndex(target)
+            except Exception:
+                pass
+        self.update_headers()
+        self.update_preview()
+        if self.items:
+            self.status_text(u"{0} {1}".format(len(self.items), _("channels")))
+        else:
+            self.status_text(_("No channels"))
+
+    def _channel_key(self, item):
+        return to_text(
+            item.get("fav_key") or item.get("id") or item.get("url")
+            or item.get("name")
+        )
+
+    def _channel_icon(self, item):
+        logo = to_text(item.get("logo"))
+        if logo:
+            local = self.store.logo_file(logo)
+            if os.path.exists(local):
+                try:
+                    from Tools.LoadPixmap import LoadPixmap
+                    pointer = LoadPixmap(local)
+                    if pointer is not None:
+                        return pointer
+                except Exception:
+                    pass
+        return pixmap("channel.png")
+
+    # ------------------------------------------------------------ helpers
+    def selected_category(self):
+        try:
+            index = self["categories"].getSelectedIndex()
+        except Exception:
+            return None
+        if 0 <= index < len(self.categories):
+            return self.categories[index]
+        return None
+
+    def selected_channel(self):
+        try:
+            index = self["channels"].getSelectedIndex()
+        except Exception:
+            return None
+        if 0 <= index < len(self.items):
+            return self.items[index]
+        return None
+
+    def current(self):
+        return self.selected_channel()
+
+    def update_headers(self):
+        cat_prefix = u">  " if self.focus == "categories" else u""
+        ch_prefix = u">  " if self.focus == "channels" else u""
+        self["catHeader"].setText(u"{0}{1}  ({2})".format(
+            cat_prefix, _("Categories"), len(self.categories)))
+        self["chHeader"].setText(u"{0}{1}  ({2})".format(
+            ch_prefix, _("Channels"), len(self.items)))
+
+    def update_source(self):
+        try:
+            label = source_label(self.store.active_source())
+        except Exception:
+            label = u""
+        label = to_text(label)
+        if len(label) > 48:
+            label = label[:45] + u"..."
+        self["source"].setText(label)
+
+    def update_search_text(self):
+        if self.query:
+            self["searchText"].setText(_("Search") + u": " + self.query)
+        else:
+            self["searchText"].setText(u"GREEN  " + _("Search channels"))
+
+    def update_preview(self):
+        item = self.selected_channel()
+        category = self.selected_category()
+        if item is None:
+            name = (category or {}).get("name") or _("Live TV")
+            self["previewKind"].setText(_("LIVE TV"))
+            self["previewName"].setText(to_text(name))
+            self["previewMeta"].setText(_("No channels"))
+            self["previewUrl"].setText(u"")
+            self["previewFav"].setText(u"")
+            self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
+            self["playLabel"].setText(u"OK  " + _("Play"))
+            self["favLabel"].setText(u"YELLOW  " + _("Add favorite"))
+            return
+
+        favorite = False
+        try:
+            favorite = self.backend.is_favorite(item)
+        except Exception:
+            pass
+        meta = []
+        if item.get("group"):
+            meta.append(to_text(item["group"]))
+        if item.get("number"):
+            meta.append(u"#{0}".format(safe_int(item["number"])))
+        self["previewKind"].setText(_("CHANNEL PREVIEW"))
+        self["previewName"].setText(item.get("name") or u"")
+        self["previewMeta"].setText(u"  \u2022  ".join(meta))
+        url = to_text(item.get("url") or item.get("cmd") or u"")
+        if len(url) > 62:
+            url = url[:59] + u"..."
+        self["previewUrl"].setText(url)
+        self["previewFav"].setText(
+            u"\u2605 " + _("Favorite") if favorite else u"")
+        self["previewLogo"].instance.setPixmap(self._channel_icon(item))
+        self["playLabel"].setText(u"OK  " + _("Play"))
+        self["favLabel"].setText(
+            u"YELLOW  " + (_("Remove favorite") if favorite else _("Add favorite")))
+
+    def apply_focus(self):
+        for name in ("categories", "channels"):
+            try:
+                self[name].selectionEnabled(name == self.focus)
+            except Exception:
+                pass
+
+    def set_focus(self, focus):
+        if focus == self.focus:
+            return
+        self.focus = focus
+        self.apply_focus()
+        self.update_headers()
+
+    def category_changed(self, force=False):
+        category = self.selected_category()
+        if category is None:
+            return
+        new_id = to_text(category.get("id") or "all")
+        if force or new_id != self.category_id:
+            self.category_id = new_id
+            self.load_channels()
+
+    def move_selected(self, list_name, direction, page=False):
+        widget = self[list_name]
+        if direction == "up":
+            widget.goLineUp()
+        elif direction == "down":
+            widget.goLineDown()
+        elif direction == "page_up":
+            widget.goPageUp()
+        elif direction == "page_down":
+            widget.goPageDown()
+        elif direction == "top":
+            widget.goTop()
+        elif direction == "bottom":
+            widget.goBottom()
+        if list_name == "categories":
+            self.category_changed()
+        else:
+            self.update_preview()
+
+    # ------------------------------------------------------------- actions
+    def key_up(self):
+        self.move_selected("categories" if self.focus == "categories" else "channels", "up")
+
+    def key_down(self):
+        self.move_selected("categories" if self.focus == "categories" else "channels", "down")
+
+    def key_page_up(self):
+        self.move_selected("categories" if self.focus == "categories" else "channels", "page_up")
+
+    def key_page_down(self):
+        self.move_selected("categories" if self.focus == "categories" else "channels", "page_down")
+
+    def key_top(self):
+        self.move_selected("categories" if self.focus == "categories" else "channels", "top")
+
+    def key_bottom(self):
+        self.move_selected("categories" if self.focus == "categories" else "channels", "bottom")
+
+    def key_left(self):
+        if self.focus == "channels":
+            self.set_focus("categories")
+
+    def key_right(self):
+        if self.focus == "categories":
+            self.category_changed()
+            self.set_focus("channels")
+
+    def key_ok(self):
+        if self.focus == "categories":
+            self.category_changed()
+            self.set_focus("channels")
+            self.update_preview()
+            return
+        item = self.selected_channel()
+        if item is not None:
+            self.play_item(item)
+
+    def key_back(self):
+        self.close()
+
+    def key_red(self):
+        self.close()
+
+    def key_green(self):
+        self.ask_search()
+
+    def key_yellow(self):
+        item = self.selected_channel()
+        if item is None:
+            return
+        key = self._channel_key(item)
+        try:
+            state = self.backend.toggle_favorite(item)
+        except Exception as error:  # noqa: BLE001
+            self.show_error(error)
+            return
+        try:
+            self.categories = self.backend.live_categories()
+        except Exception:
+            pass
+        self.render_categories()
+        self.load_channels(keep_key=key)
+        self.status_text(_("Added to favorites") if state else _("Removed from favorites"))
+
+    def key_blue(self):
+        self.query = u""
+        self.update_search_text()
+        self.reload_backend()
+
+    def key_menu(self):
+        pass
+
+    def search_done(self, text):
+        if text is None:
+            return
+        self.query = to_text(text).strip()
+        self.update_search_text()
+        self.load_channels()
+        self.set_focus("channels")
+        self.update_preview()
 
 
 class VodCategoriesScreen(BackendScreen):

@@ -67,6 +67,9 @@ class ServiceReference(object):
     def setName(self, name):
         self.name = name
 
+    def toString(self):
+        return self.reference
+
 
 class Font(object):
     def __init__(self, name, size):
@@ -376,8 +379,9 @@ def main():
         from IPTVPlayerPro.core.store import Store
         from IPTVPlayerPro.ui import menu as menu_module
         from IPTVPlayerPro.ui.account import AccountScreen
-        from IPTVPlayerPro.ui.browse import (EpisodesScreen, LiveCategoriesScreen,
-                                             LiveScreen, SeasonsScreen, SeriesCategoriesScreen,
+        from IPTVPlayerPro.ui.browse import (EpisodesScreen, LiveBrowserScreen,
+                                             LiveCategoriesScreen, LiveScreen,
+                                             SeasonsScreen, SeriesCategoriesScreen,
                                              SeriesScreen, VodCategoriesScreen, VodScreen)
         from IPTVPlayerPro.ui.info import InfoScreen
         from IPTVPlayerPro.ui.settings import SettingsScreen
@@ -413,10 +417,100 @@ def main():
         assert info["title"].text == "Test"
 
         category = {"id": "all", "name": "All"}
+
+        class FakeBackend(object):
+            kind = "m3u"
+            channels = []
+
+            def live_categories(self):
+                return [
+                    {"id": "all", "name": "All channels", "count": 2},
+                    {"id": "g:News", "name": "News", "count": 1},
+                ]
+
+            def live_items(self, category_id, query=""):
+                items = [
+                    {"id": "1", "name": "News One", "group": "News", "number": 1,
+                     "fav_key": "one", "url": "http://example.test/one"},
+                    {"id": "2", "name": "Sports Two", "group": "Sports", "number": 2,
+                     "fav_key": "two", "url": "http://example.test/two"},
+                ]
+                if category_id == "g:News":
+                    items = [items[0]]
+                if query:
+                    items = [item for item in items if query.lower() in item["name"].lower()]
+                return items
+
+            def is_favorite(self, item):
+                return False
+
+        live = LiveBrowserScreen(session, store, FakeBackend())
+        live._layout_ready()
+        live.build()
+        assert live["categories"].l.items
+        assert live["channels"].l.items
+        assert live["previewName"].text
+        live.key_right()
+        assert live.focus == "channels"
+
+        import xml.etree.ElementTree as ET
+        from IPTVPlayerPro.ui.skins import LIVE_SKIN
+        skin_names = set(widget.get("name") for widget in ET.fromstring(LIVE_SKIN).findall("widget"))
+        for name in ("bg", "header", "categories", "channels", "previewLogo",
+                     "previewName", "playBg", "favBg", "hint"):
+            assert name in skin_names, name
+
+        from IPTVPlayerPro.ui.base import play_url
+        from IPTVPlayerPro.core.net import NetError
+
+        class FailingPlaySession(Session):
+            def playService(self, service):
+                self.played = service
+                return 1
+
+            def getCurrentlyPlayingServiceOrGroup(self):
+                return None
+
+        failed_play = FailingPlaySession()
+        try:
+            play_url(failed_play, "http://example.test/live.ts")
+        except NetError:
+            pass
+        else:
+            raise AssertionError("A failed playService() must not be treated as success")
+
+        class NativeFailureSession(Session):
+            def playService(self, service):
+                return 0
+
+            def getCurrentlyPlayingServiceOrGroup(self):
+                return None
+
+        try:
+            play_url(NativeFailureSession(), "http://example.test/live.ts")
+        except NetError:
+            pass
+        else:
+            raise AssertionError("A cleared current service means playback did not start")
+
+        class PlayingSession(Session):
+            def __init__(self):
+                Session.__init__(self)
+                self.current = None
+
+            def playService(self, service):
+                self.current = service
+                return 0
+
+            def getCurrentlyPlayingServiceOrGroup(self):
+                return self.current
+
+        play_url(PlayingSession(), "http://example.test/live.ts")
         backend = None
         screens = [
             LiveCategoriesScreen(session, store, backend),
             LiveScreen(session, store, backend, category),
+            LiveBrowserScreen(session, store, backend),
             VodCategoriesScreen(session, store, backend),
             VodScreen(session, store, backend, category),
             SeriesCategoriesScreen(session, store, backend),
@@ -425,7 +519,8 @@ def main():
             EpisodesScreen(session, store, backend, {"id": "s1", "name": "Show"}, {"id": "1", "name": "Season 1"}),
         ]
         for screen in screens:
-            assert screen["title"].text
+            if screen.get("title") is not None:
+                assert screen["title"].text
 
         descriptors = plugin_module.Plugins()
         assert len(descriptors) >= 1

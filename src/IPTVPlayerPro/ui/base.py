@@ -29,7 +29,7 @@ from Tools.LoadPixmap import LoadPixmap
 
 from ..core.i18n import _
 from ..core.net import Http, NetError
-from ..core.util import md5, to_text
+from ..core.util import md5, safe_int, to_text
 
 PLUGIN_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGE_PATH = os.path.join(PLUGIN_PATH, "images")
@@ -41,6 +41,14 @@ RED = "#e0b0b0"
 ROW_BG = "#15151f"
 ROW_SEL = "#7d0f0f"
 ROW_BG_ALT = "#111119"
+
+# Three-column live browser.  The colours stay close to the supplied Ibo
+# Player Pro mock-up while keeping enough contrast on small TV panels.
+LIVE_ROW_BG = "#171a3f"
+LIVE_ROW_SEL = "#5d4a9f"
+LIVE_TEXT = "#f4f3ff"
+LIVE_MUTED = "#aeb2d6"
+LIVE_ACCENT = "#f5c84b"
 
 _PIXMAPS = {}
 _FONTS = {}
@@ -97,6 +105,86 @@ class MultiList(MenuList):
         self.l.setFont(1, font(16))
         self.l.setFont(2, font(23, True))
         self.l.setFont(3, font(26, True))
+
+
+class LiveList(MenuList):
+    """Compact list used by the three-column live browser."""
+
+    def __init__(self, item_height=52):
+        MenuList.__init__(self, [], False, eListboxPythonMultiContent)
+        self.l.setItemHeight(item_height)
+        self.l.setFont(0, font(16))
+        self.l.setFont(1, font(14))
+        self.l.setFont(2, font(20, True))
+        self.l.setFont(3, font(24, True))
+
+
+def category_entry(width, height, title, value=None):
+    """A clean category row with the channel count on the right."""
+    title = to_text(title)
+    value = to_text(value) if value else u""
+    entries = [
+        MultiContentEntryRectangle(
+            pos=(0, 1), size=(width, height - 2),
+            backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
+        )
+    ]
+    value_width = 74 if value else 0
+    entries.append(MultiContentEntryText(
+        pos=(16, 0), size=(width - 16 - value_width - 16, height),
+        font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+        text=title, color=LIVE_TEXT, color_sel=WHITE,
+    ))
+    if value:
+        entries.append(MultiContentEntryText(
+            pos=(width - value_width - 12, 0), size=(value_width, height),
+            font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            text=value, color=LIVE_MUTED, color_sel=WHITE,
+        ))
+    return entries
+
+
+def channel_entry(width, height, number, title, icon=None, favorite=False,
+                  bg=LIVE_ROW_BG, selected_bg=LIVE_ROW_SEL):
+    """A numbered channel row with a logo and an optional favourite star."""
+    title = to_text(title)
+    number = safe_int(number)
+    entries = [
+        MultiContentEntryRectangle(
+            pos=(0, 1), size=(width, height - 2),
+            backgroundColor=bg, backgroundColorSelected=selected_bg,
+        )
+    ]
+    number_text = u"{0:02d}".format(number) if number else u""
+    number_width = 42 if number_text else 0
+    if number_text:
+        entries.append(MultiContentEntryText(
+            pos=(width - number_width - 8, 0), size=(number_width, height),
+            font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            text=number_text, color=LIVE_MUTED, color_sel=WHITE,
+        ))
+    icon_x = 12
+    if icon is not None:
+        entries.append(MultiContentEntryPixmapAlphaTest(
+            pos=(icon_x, (height - 32) // 2), size=(32, 32), png=icon,
+        ))
+    text_x = icon_x + 44
+    badge_width = 26 if favorite else 0
+    text_width = max(40, width - text_x - number_width - badge_width - 18)
+    entries.append(MultiContentEntryText(
+        pos=(text_x, 0), size=(text_width, height),
+        font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+        text=title, color=LIVE_TEXT, color_sel=WHITE,
+    ))
+    if favorite:
+        entries.append(MultiContentEntryText(
+            pos=(width - number_width - badge_width - 12, 0),
+            size=(badge_width, height),
+            font=2, flags=RT_HALIGN_CENTER | RT_VALIGN_CENTER,
+            text=u"\u2605", color=LIVE_ACCENT, color_sel=WHITE,
+        ))
+    return entries
+
 
 
 def row_entry(width, height, title, subtitle=None, icon=None, icon_size=(44, 44),
@@ -510,9 +598,33 @@ def play_url(session, url, service_type=4097, name=u"", item_ua=None):
         except Exception:
             pass
     try:
-        session.nav.playService(service)
+        result = session.nav.playService(service)
     except Exception as error:
         raise NetError(to_text(error))
+    # Navigation.playService() returns 1 when the service could not be
+    # started (or when the request was refused).  Older images return None;
+    # only an explicit 1 is treated as a failure, except when the same service
+    # is already playing (that is a harmless "ignored" result).
+    current = None
+    has_current = False
+    try:
+        getter = getattr(session.nav, "getCurrentlyPlayingServiceOrGroup", None)
+        if getter is not None:
+            current = getter()
+            has_current = True
+    except Exception:
+        current = None
+        has_current = False
+    if result == 1:
+        if current is None or to_text(current.toString()) != to_text(service.toString()):
+            raise NetError(_("Could not open the stream"))
+    elif has_current and current is None:
+        # A successful Navigation.playService() call leaves the new service
+        # as the current one.  Some images return 0 even after a native tune
+        # failure and clear the reference instead; do not close the plugin in
+        # that case.
+        raise NetError(_("Could not open the stream"))
+    return result
 
 
 def yes_no(session, text, callback):
