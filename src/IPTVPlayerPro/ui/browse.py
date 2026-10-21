@@ -256,7 +256,7 @@ class LiveBrowserScreen(BackendScreen):
         self.page = 1
         self.total = 0
         self.categories = []
-        self.items = []
+        self.browser_items = []
         self.category_id = "all"
         self.focus = "categories"
         self._channel_request = 0
@@ -396,7 +396,7 @@ class LiveBrowserScreen(BackendScreen):
 
     def load_channels(self, keep_key=None):
         if self.backend is None:
-            self.items = []
+            self.browser_items = []
             self.render_channels()
             return
         self._channel_request += 1
@@ -408,7 +408,7 @@ class LiveBrowserScreen(BackendScreen):
         def done(items):
             if request != self._channel_request:
                 return
-            self.items = list(items)
+            self.browser_items = list(items)
             self.render_channels(keep_key)
 
         def failed(error):
@@ -420,7 +420,7 @@ class LiveBrowserScreen(BackendScreen):
         if self._needs_async_channels():
             # Do not leave the previous category's channels selectable while
             # the new MAG genre is still loading.
-            self.items = []
+            self.browser_items = []
             try:
                 self["channels"].setList([])
             except Exception:
@@ -444,7 +444,7 @@ class LiveBrowserScreen(BackendScreen):
     def render_channels(self, keep_key=None):
         entries = []
         target = 0
-        for index, item in enumerate(self.items):
+        for index, item in enumerate(self.browser_items):
             favorite = False
             try:
                 favorite = self.backend.is_favorite(item)
@@ -465,8 +465,8 @@ class LiveBrowserScreen(BackendScreen):
                 pass
         self.update_headers()
         self.update_preview()
-        if self.items:
-            self.status_text(u"{0} {1}".format(len(self.items), _("channels")))
+        if self.browser_items:
+            self.status_text(u"{0} {1}".format(len(self.browser_items), _("channels")))
         else:
             self.status_text(_("No channels"))
 
@@ -505,8 +505,8 @@ class LiveBrowserScreen(BackendScreen):
             index = self["channels"].getSelectedIndex()
         except Exception:
             return None
-        if 0 <= index < len(self.items):
-            return self.items[index]
+        if 0 <= index < len(self.browser_items):
+            return self.browser_items[index]
         return None
 
     def current(self):
@@ -518,7 +518,7 @@ class LiveBrowserScreen(BackendScreen):
         self["catHeader"].setText(u"{0}{1}  ({2})".format(
             cat_prefix, _("Categories"), len(self.categories)))
         self["chHeader"].setText(u"{0}{1}  ({2})".format(
-            ch_prefix, _("Channels"), len(self.items)))
+            ch_prefix, _("Channels"), len(self.browser_items)))
 
     def update_source(self):
         try:
@@ -733,7 +733,7 @@ class VodScreen(BackendScreen):
         BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Movies"),
                                u"", _("OK play  •  GREEN search  •  BLUE reload  •  RED back"))
         self.category = category
-        self.items = []
+        self.browser_items = []
         self.loaded_pages = 0
 
     def build(self):
@@ -744,7 +744,7 @@ class VodScreen(BackendScreen):
 
     def _first_page(self, result):
         items, total = result
-        self.items = list(items)
+        self.browser_items = list(items)
         self.total = total
         self.loaded_pages = 1
         self.status_text(u"")
@@ -752,7 +752,7 @@ class VodScreen(BackendScreen):
 
     def render(self):
         query = self.query.lower()
-        visible = [item for item in self.items if not query or query in to_text(item.get("name")).lower()]
+        visible = [item for item in self.browser_items if not query or query in to_text(item.get("name")).lower()]
         rows = []
         entries = []
         for item in visible:
@@ -761,15 +761,15 @@ class VodScreen(BackendScreen):
                 1200, 78, item.get("name") or "",
                 subtitle=self._meta(item), icon=pixmap("movie.png"), icon_size=(46, 66),
             ))
-        if len(self.items) < self.total:
+        if len(self.browser_items) < self.total:
             rows.append({"type": "more"})
             entries.append(row_entry(1200, 60, _("Load more ..."), icon=pixmap("more.png"), icon_size=(36, 36)))
         self.set_entries(entries, rows)
-        subtitle = u"{0} {1}".format(self.total or len(self.items), _("movies"))
+        subtitle = u"{0} {1}".format(self.total or len(self.browser_items), _("movies"))
         if query:
             subtitle = u"{0}  \u2022  \"{1}\"".format(subtitle, self.query)
         self.set_subtitle(subtitle)
-        if not visible and not (len(self.items) < self.total):
+        if not visible and not (len(self.browser_items) < self.total):
             self.status_text(_("No movies"))
 
     @staticmethod
@@ -797,7 +797,7 @@ class VodScreen(BackendScreen):
 
     def _more_loaded(self, result):
         items, total = result
-        self.items.extend(items)
+        self.browser_items.extend(items)
         self.total = total
         self.loaded_pages += 1
         self.status_text(u"")
@@ -844,7 +844,7 @@ class SeriesScreen(BackendScreen):
         BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Series"),
                                u"", _("OK open  •  GREEN search  •  BLUE reload  •  RED back"))
         self.category = category
-        self.items = []
+        self.browser_items = []
         self.total = 0
 
     def build(self):
@@ -855,14 +855,14 @@ class SeriesScreen(BackendScreen):
 
     def _first_page(self, result):
         items, total = result
-        self.items = list(items)
+        self.browser_items = list(items)
         self.total = total
         self.status_text(u"")
         self.render()
 
     def render(self):
         query = self.query.lower()
-        visible = [item for item in self.items if not query or query in to_text(item.get("name")).lower()]
+        visible = [item for item in self.browser_items if not query or query in to_text(item.get("name")).lower()]
         rows = []
         entries = []
         for item in visible:
@@ -874,13 +874,13 @@ class SeriesScreen(BackendScreen):
                 1200, 78, item.get("name") or "", subtitle=subtitle,
                 icon=pixmap("series_card.png"), icon_size=(46, 66),
             ))
-        if len(self.items) < self.total:
+        if len(self.browser_items) < self.total:
             rows.append({"type": "more"})
             entries.append(row_entry(1200, 60, _("Load more ..."), icon=pixmap("more.png"), icon_size=(36, 36)))
         self.set_entries(entries, rows)
-        subtitle = u"{0} {1}".format(self.total or len(self.items), _("series"))
+        subtitle = u"{0} {1}".format(self.total or len(self.browser_items), _("series"))
         self.set_subtitle(subtitle)
-        if not visible and not (len(self.items) < self.total):
+        if not visible and not (len(self.browser_items) < self.total):
             self.status_text(_("No series"))
 
     def activate(self, row):
@@ -897,7 +897,7 @@ class SeriesScreen(BackendScreen):
 
     def _more_loaded(self, result):
         items, total = result
-        self.items.extend(items)
+        self.browser_items.extend(items)
         self.total = total
         self.status_text(u"")
         self.render()
@@ -945,7 +945,7 @@ class EpisodesScreen(BackendScreen):
                                u"", _("OK play  •  RED back"))
         self.series = series
         self.season = season
-        self.items = []
+        self.browser_items = []
         self.total = 0
         self.page = 1
 
@@ -956,7 +956,7 @@ class EpisodesScreen(BackendScreen):
 
     def _first_page(self, result):
         items, total = result
-        self.items = list(items)
+        self.browser_items = list(items)
         self.total = total
         self.page = 1
         self.status_text(u"")
@@ -965,19 +965,19 @@ class EpisodesScreen(BackendScreen):
     def render(self):
         rows = []
         entries = []
-        for item in self.items:
+        for item in self.browser_items:
             rows.append(item)
             entries.append(row_entry(
                 1200, 76, item.get("name") or "",
                 subtitle=item.get("description") or item.get("genres") or _("Episode"),
                 icon=pixmap("episode.png"), icon_size=(44, 44),
             ))
-        if len(self.items) < self.total:
+        if len(self.browser_items) < self.total:
             rows.append({"type": "more"})
             entries.append(row_entry(1200, 60, _("Load more ..."), icon=pixmap("more.png"), icon_size=(36, 36)))
         self.set_entries(entries, rows)
         self.set_subtitle(u"{0}  \u2022  {1} {2}".format(
-            self.season.get("name") or "", len(self.items), _("episodes")))
+            self.season.get("name") or "", len(self.browser_items), _("episodes")))
         if not rows:
             self.status_text(_("No episodes"))
 
@@ -992,7 +992,7 @@ class EpisodesScreen(BackendScreen):
 
     def _more_loaded(self, result):
         items, total = result
-        self.items.extend(items)
+        self.browser_items.extend(items)
         self.total = total
         self.status_text(u"")
         self.render()

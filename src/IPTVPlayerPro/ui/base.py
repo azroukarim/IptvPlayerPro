@@ -254,7 +254,13 @@ def label_entry(width, height, text, font_index=2, color=WHITE, align=RT_HALIGN_
 
 
 class AsyncScreen(Screen):
-    """Screen with a tiny helper to run blocking work in a thread."""
+    """Screen with a tiny helper to run blocking work in a thread.
+
+    Enigma2 screens inherit from ``dict``.  Never assign attributes such as
+    ``items``, ``keys`` or ``values`` on a screen: they hide the inherited
+    ``dict`` methods, and ``Screen.doClose()`` calls ``self.items()`` while
+    deleting the GUI.  Use a distinct name like ``browser_items`` instead.
+    """
 
     def __init__(self, session):
         Screen.__init__(self, session)

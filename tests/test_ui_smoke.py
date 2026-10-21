@@ -276,6 +276,15 @@ def _build_screens():
         def close(self, *result):
             self.closed = result
 
+        def doClose(self):
+            # Mirror Screens.Screen.doClose(): it calls dict.items() after
+            # the onClose callbacks.  A screen attribute named "items" hides
+            # that method and crashes the real close path.
+            for method in self.onClose:
+                method()
+            for name, value in list(self.items()):
+                pass
+
     screen_module.Screen = Screen
 
     message = types.ModuleType("Screens.MessageBox")
@@ -521,6 +530,11 @@ def main():
         for screen in screens:
             if screen.get("title") is not None:
                 assert screen["title"].text
+            # Enigma2 screens are dict subclasses.  Never shadow dict.items()
+            # (or any other dict method) with a screen attribute, otherwise
+            # Screen.deleteGUIScreen() raises "'list' object is not callable".
+            assert "items" not in screen.__dict__, type(screen).__name__
+            screen.doClose()
 
         descriptors = plugin_module.Plugins()
         assert len(descriptors) >= 1
