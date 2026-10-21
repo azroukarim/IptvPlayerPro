@@ -249,6 +249,12 @@ class M3UBackend(BaseBackend):
             categories.append(self._category("g:" + group, group, count))
         return categories
 
+    def _page_slice(self, items, page):
+        size = max(50, min(1000, safe_int(self.settings.get("page_size"), 300)))
+        page = max(1, safe_int(page, 1))
+        start = (page - 1) * size
+        return items[start:start + size], len(items)
+
     def vod_items(self, category_id, query="", page=1):
         if category_id.startswith("g:"):
             group = category_id[2:]
@@ -257,7 +263,7 @@ class M3UBackend(BaseBackend):
             items = list(self.vod)
         if query:
             items = [item for item in items if _match(item.get("name"), query)]
-        return items, len(items)
+        return self._page_slice(items, page)
 
     # -------------------------------------------------------------- series
     def series_categories(self):
@@ -285,7 +291,7 @@ class M3UBackend(BaseBackend):
             items = list(self.series)
         if query:
             items = [item for item in items if _match(item.get("name"), query)]
-        return items, len(items)
+        return self._page_slice(items, page)
 
     def seasons(self, series_id):
         entry = self._series_index.get(series_id)

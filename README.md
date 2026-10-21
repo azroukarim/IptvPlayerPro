@@ -8,6 +8,7 @@
 
 - واجهة رئيسية ببلاطات: البث المباشر، الأفلام، المسلسلات، الحساب، تغيير السيرفر، الإعدادات، تحديث البورتال، الخروج.
 - شاشة بث مباشر بثلاثة أعمدة: الأقسام مع عدد القنوات، قائمة القنوات المرقمة مع الشعارات، ولوحة معاينة للقناة المختارة.
+- تحميل القوائم الكبيرة على صفحات (300 عنصرًا افتراضيًا) مع زر «تحميل المزيد»، لتقليل استهلاك الذاكرة ومنع انهيار Enigma2 مع ملفات M3U الضخمة.
 - إدارة عدة مصادر (قوائم M3U وبورتالات MAG) مع تنشيط مصدر واحد في كل مرة.
 - واجهة ويب محلية (WebIF) بالإنجليزية لإضافة قوائم M3U وبورتالات MAG/Stalker وتنشيطها وحذفها وتحديثها من المتصفح.
 - حفظ السيرفرات في ملفات نصية قابلة للنسخ والاستيراد، مع اختيار مسار التخزين بين الذاكرة الداخلية وHDD وUSB.
@@ -45,7 +46,7 @@ sh /tmp/iptvpro.sh
 
 ```sh
 sh /tmp/iptvpro.sh --no-restart      # تثبيت بدون إعادة تشغيل
-sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.3_all.ipk
+sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk
 ```
 
 إذا نسخت `install.sh` وملف `ipk` إلى نفس المجلد على الرسيفر، فسيستخدم السكريبت الملف المحلي دون تنزيل.
@@ -53,12 +54,12 @@ sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.3_all.
 ### عبر ملف ipk
 
 1. حمّل الملف من مجلد `dist`:
-   `enigma2-plugin-extensions-iptvplayerpro_1.1.3_all.ipk`
+   `enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk`
 2. انسخه إلى الجهاز، مثلًا إلى `/tmp` عبر FTP/SFTP.
 3. من Telnet/SSH نفّذ:
 
 ```sh
-opkg install /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.3_all.ipk
+opkg install /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk
 ```
 
 4. أعد تشغيل الواجهة:
@@ -74,7 +75,7 @@ init 3
 بعد التثبيت يظهر البلوجين في: **Menu → Plugins** وفي قائمة الإضافات.
 
 > إذا رفض `opkg` التثبيت بسبب الاعتماديات، استخدم:
-> `opkg install --force-depends /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.3_all.ipk`
+> `opkg install --force-depends /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk`
 
 ## الإعداد الأول
 
@@ -214,7 +215,7 @@ python build_ipk.py
 سيتم إنشاء الملف في:
 
 ```
-dist/enigma2-plugin-extensions-iptvplayerpro_1.1.3_all.ipk
+dist/enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk
 ```
 
 ### الاختبارات

@@ -321,7 +321,7 @@ def _build_screens():
     choice.ChoiceBox = ChoiceBox
 
     load_pixmap = types.ModuleType("Tools.LoadPixmap")
-    load_pixmap.LoadPixmap = lambda path: object()
+    load_pixmap.LoadPixmap = lambda path, **kwargs: object()
 
     plugin = types.ModuleType("Plugins.Plugin")
 
@@ -461,6 +461,41 @@ def main():
         assert live["previewName"].text
         live.key_right()
         assert live.focus == "channels"
+
+        class PagedBackend(FakeBackend):
+            def live_categories(self):
+                return [{"id": "all", "name": "All channels", "count": 125}]
+
+            def live_items(self, category_id, query=""):
+                items = [
+                    {"id": str(index), "name": "Channel {0}".format(index),
+                     "group": "News", "number": index + 1,
+                     "fav_key": str(index), "url": "http://example.test/{0}".format(index)}
+                    for index in range(125)
+                ]
+                if query:
+                    items = [item for item in items if query.lower() in item["name"].lower()]
+                return items
+
+        store.set_setting("page_size", 50)
+        paged = LiveBrowserScreen(session, store, PagedBackend())
+        paged._layout_ready()
+        paged.build()
+        assert paged.total == 125
+        assert len(paged.browser_items) == 50
+        assert len(paged["channels"].l.items) == 51  # 50 channels + "Load more"
+        paged.set_focus("channels")
+        paged["channels"].setCurrentIndex(50)
+        paged.key_ok()
+        assert len(paged.browser_items) == 100
+        assert paged.page == 2
+        assert paged["channels"].getSelectedIndex() == 50
+        paged["channels"].setCurrentIndex(100)
+        paged.key_ok()
+        assert len(paged.browser_items) == 125
+        assert paged.page == 3
+        assert len(paged["channels"].l.items) == 125
+        assert not paged.selected_is_more()
 
         import xml.etree.ElementTree as ET
         from IPTVPlayerPro.ui.skins import LIVE_SKIN

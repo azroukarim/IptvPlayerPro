@@ -3,6 +3,7 @@
 
 from __future__ import absolute_import
 
+import gc
 import os
 
 from Components.ActionMap import HelpableActionMap
@@ -17,6 +18,13 @@ from .base import (AsyncScreen, ListScreen, LiveList, category_entry,
                    channel_entry, info_box, pixmap, play_url, row_entry)
 from .info import InfoScreen
 from .skins import LIVE_SKIN
+
+
+# Channel logos are decoded at their original size.  Some providers ship very
+# large PNGs, so loading a logo for every channel in a big playlist can exhaust
+# the 32-bit Python process.  Keep real logos only around the selected row; the
+# rest of the list uses the small built-in placeholder.
+LIVE_ICON_RADIUS = 12
 
 
 class BackendScreen(ListScreen):
@@ -91,6 +99,12 @@ class BackendScreen(ListScreen):
             self.show_error(error)
             return
         if self.store.settings.get("close_after_zap", True):
+            release = getattr(self, "release_channel_rows", None)
+            if release is not None:
+                try:
+                    release()
+                except Exception:
+                    pass
             self.close("zapped")
 
     def _play_failed(self, error):
@@ -200,7 +214,7 @@ class LiveScreen(BackendScreen):
             if os.path.exists(local):
                 try:
                     from Tools.LoadPixmap import LoadPixmap
-                    pointer = LoadPixmap(local)
+                    pointer = LoadPixmap(local, cached=False)
                     if pointer is not None:
                         return pointer
                 except Exception:
@@ -260,6 +274,9 @@ class LiveBrowserScreen(BackendScreen):
         self.category_id = "all"
         self.focus = "categories"
         self._channel_request = 0
+        self._channel_source = []
+        self._icon_start = 0
+        self._icon_end = 0
 
         self["bg"] = Pixmap()
         self["header"] = Pixmap()
@@ -394,8 +411,14 @@ class LiveBrowserScreen(BackendScreen):
             and self.category_id not in ("all", "fav")
         )
 
-    def load_channels(self, keep_key=None):
+    def channel_page_size(self):
+        size = safe_int(self.store.settings.get("page_size"), 300)
+        return max(50, min(1000, size))
+
+    def load_channels(self, keep_key=None, keep_page=False):
         if self.backend is None:
+            self._channel_source = []
+            self.total = 0
             self.browser_items = []
             self.render_channels()
             return
@@ -408,18 +431,28 @@ class LiveBrowserScreen(BackendScreen):
         def done(items):
             if request != self._channel_request:
                 return
-            self.browser_items = list(items)
-            self.render_channels(keep_key)
+            self.apply_channel_items(items, keep_key=keep_key, keep_page=keep_page)
 
         def failed(error):
             if request != self._channel_request:
                 return
+            self._channel_source = []
+            self.total = 0
+            self.browser_items = []
+            try:
+                self["channels"].setList([])
+            except Exception:
+                pass
+            self.update_headers()
+            self.update_preview()
             self.status_text(u"")
             self.show_error(error)
 
         if self._needs_async_channels():
             # Do not leave the previous category's channels selectable while
             # the new MAG genre is still loading.
+            self._channel_source = []
+            self.total = 0
             self.browser_items = []
             try:
                 self["channels"].setList([])
@@ -441,21 +474,83 @@ class LiveBrowserScreen(BackendScreen):
             return
         done(items)
 
-    def render_channels(self, keep_key=None):
-        entries = []
+    def apply_channel_items(self, items, keep_key=None, keep_page=False):
+        """Keep only one page of rows in the list widget.
+
+        A large M3U file can contain tens of thousands of channels.  Building
+        a MultiContent row for every one of them at once can exhaust memory on
+        a 32-bit receiver, so rows are loaded a page at a time.  The full
+        channel list is only kept as references for paging and searching.
+        """
+        self._channel_source = items
+        self.total = len(items)
+        size = self.channel_page_size()
+        page = 1
         target = 0
+        if keep_key:
+            for index, item in enumerate(items):
+                if self._channel_key(item) == keep_key:
+                    target = index
+                    page = index // size + 1
+                    break
+        elif keep_page:
+            pages = max(1, (self.total + size - 1) // size)
+            page = max(1, min(self.page, pages))
+        start = (page - 1) * size
+        self.page = page
+        self.browser_items = items[start:start + size]
+        target_index = max(0, target - start)
+        if target_index >= len(self.browser_items):
+            target_index = 0
+        self.render_channels(select_index=target_index)
+
+    def load_more_channels(self):
+        if len(self.browser_items) >= self.total:
+            return
+        start = len(self.browser_items)
+        end = start + self.channel_page_size()
+        more = self._channel_source[start:end]
+        if not more:
+            return
+        self.page += 1
+        self.browser_items.extend(more)
+        self.render_channels(select_index=start)
+
+    def render_channels(self, keep_key=None, select_index=None):
+        target = 0
+        if select_index is not None:
+            target = max(0, select_index)
+        elif keep_key:
+            for index, item in enumerate(self.browser_items):
+                if self._channel_key(item) == keep_key:
+                    target = index
+                    break
+        if self.browser_items:
+            target = min(target, len(self.browser_items) - 1)
+        else:
+            target = 0
+        self._icon_start = max(0, target - LIVE_ICON_RADIUS)
+        self._icon_end = min(len(self.browser_items), target + LIVE_ICON_RADIUS + 1)
+        placeholder = pixmap("channel.png")
+        entries = []
         for index, item in enumerate(self.browser_items):
             favorite = False
             try:
                 favorite = self.backend.is_favorite(item)
             except Exception:
                 pass
-            if keep_key and self._channel_key(item) == keep_key:
-                target = index
+            icon = placeholder
+            if self._icon_start <= index < self._icon_end:
+                icon = self._channel_icon(item)
             entries.append(channel_entry(
                 412, 52, item.get("number") or index + 1,
-                item.get("name") or u"", icon=self._channel_icon(item),
+                item.get("name") or u"", icon=icon,
                 favorite=favorite,
+            ))
+        if len(self.browser_items) < self.total:
+            entries.append(channel_entry(
+                412, 52, 0, _("Load more ..."),
+                icon=pixmap("more.png"),
             ))
         self["channels"].setList(entries)
         if entries:
@@ -466,9 +561,33 @@ class LiveBrowserScreen(BackendScreen):
         self.update_headers()
         self.update_preview()
         if self.browser_items:
-            self.status_text(u"{0} {1}".format(len(self.browser_items), _("channels")))
+            if len(self.browser_items) < self.total:
+                self.status_text(u"{0} / {1} {2}".format(
+                    len(self.browser_items), self.total, _("channels")))
+            else:
+                self.status_text(u"{0} {1}".format(self.total, _("channels")))
         else:
             self.status_text(_("No channels"))
+
+    def release_channel_rows(self):
+        """Drop the page data before handing the screen back to Enigma2."""
+        self._channel_source = []
+        self.total = 0
+        self.browser_items = []
+        self._icon_start = 0
+        self._icon_end = 0
+        try:
+            self["channels"].setList([])
+        except Exception:
+            pass
+        try:
+            self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
+        except Exception:
+            pass
+        try:
+            gc.collect()
+        except Exception:
+            pass
 
     def _channel_key(self, item):
         return to_text(
@@ -483,12 +602,29 @@ class LiveBrowserScreen(BackendScreen):
             if os.path.exists(local):
                 try:
                     from Tools.LoadPixmap import LoadPixmap
-                    pointer = LoadPixmap(local)
+                    pointer = LoadPixmap(local, cached=False)
                     if pointer is not None:
                         return pointer
                 except Exception:
                     pass
         return pixmap("channel.png")
+
+    def refresh_icon_window(self):
+        """Load logos only for a small window around the selected channel."""
+        if not self.browser_items:
+            return
+        try:
+            index = self["channels"].getSelectedIndex()
+        except Exception:
+            return
+        if index >= len(self.browser_items):
+            # The "Load more ..." row has no channel logo.
+            return
+        if self._icon_start <= index < self._icon_end:
+            return
+        item = self.selected_channel()
+        key = self._channel_key(item) if item is not None else None
+        self.render_channels(keep_key=key)
 
     # ------------------------------------------------------------ helpers
     def selected_category(self):
@@ -509,16 +645,29 @@ class LiveBrowserScreen(BackendScreen):
             return self.browser_items[index]
         return None
 
+    def selected_is_more(self):
+        if len(self.browser_items) >= self.total:
+            return False
+        try:
+            index = self["channels"].getSelectedIndex()
+        except Exception:
+            return False
+        return index >= len(self.browser_items)
+
     def current(self):
         return self.selected_channel()
 
     def update_headers(self):
         cat_prefix = u">  " if self.focus == "categories" else u""
         ch_prefix = u">  " if self.focus == "channels" else u""
+        if len(self.browser_items) < self.total:
+            channel_count = u"{0}/{1}".format(len(self.browser_items), self.total)
+        else:
+            channel_count = u"{0}".format(self.total or len(self.browser_items))
         self["catHeader"].setText(u"{0}{1}  ({2})".format(
             cat_prefix, _("Categories"), len(self.categories)))
         self["chHeader"].setText(u"{0}{1}  ({2})".format(
-            ch_prefix, _("Channels"), len(self.browser_items)))
+            ch_prefix, _("Channels"), channel_count))
 
     def update_source(self):
         try:
@@ -539,6 +688,17 @@ class LiveBrowserScreen(BackendScreen):
     def update_preview(self):
         item = self.selected_channel()
         category = self.selected_category()
+        if self.selected_is_more():
+            self["previewKind"].setText(_("Channels"))
+            self["previewName"].setText(_("Load more ..."))
+            self["previewMeta"].setText(u"{0} / {1} {2}".format(
+                len(self.browser_items), self.total, _("channels")))
+            self["previewUrl"].setText(u"")
+            self["previewFav"].setText(u"")
+            self["previewLogo"].instance.setPixmap(pixmap("more.png"))
+            self["playLabel"].setText(u"OK  " + _("Load more ..."))
+            self["favLabel"].setText(u"")
+            return
         if item is None:
             name = (category or {}).get("name") or _("Live TV")
             self["previewKind"].setText(_("LIVE TV"))
@@ -615,6 +775,7 @@ class LiveBrowserScreen(BackendScreen):
         if list_name == "categories":
             self.category_changed()
         else:
+            self.refresh_icon_window()
             self.update_preview()
 
     # ------------------------------------------------------------- actions
@@ -651,6 +812,9 @@ class LiveBrowserScreen(BackendScreen):
             self.set_focus("channels")
             self.update_preview()
             return
+        if self.selected_is_more():
+            self.load_more_channels()
+            return
         item = self.selected_channel()
         if item is not None:
             self.play_item(item)
@@ -665,6 +829,8 @@ class LiveBrowserScreen(BackendScreen):
         self.ask_search()
 
     def key_yellow(self):
+        if self.selected_is_more():
+            return
         item = self.selected_channel()
         if item is None:
             return
@@ -679,7 +845,7 @@ class LiveBrowserScreen(BackendScreen):
         except Exception:
             pass
         self.render_categories()
-        self.load_channels(keep_key=key)
+        self.load_channels(keep_key=key, keep_page=True)
         self.status_text(_("Added to favorites") if state else _("Removed from favorites"))
 
     def key_blue(self):
@@ -739,7 +905,7 @@ class VodScreen(BackendScreen):
     def build(self):
         self.page = 1
         self.status_text(_("Loading ..."))
-        self.run_async(lambda: self.backend.vod_items(self.category.get("id") or "all", u"", 1),
+        self.run_async(lambda: self.backend.vod_items(self.category.get("id") or "all", self.query, 1),
                        self._first_page, self._load_failed)
 
     def _first_page(self, result):
@@ -792,7 +958,7 @@ class VodScreen(BackendScreen):
     def load_more(self):
         self.page += 1
         self.status_text(_("Loading ..."))
-        self.run_async(lambda: self.backend.vod_items(self.category.get("id") or "all", u"", self.page),
+        self.run_async(lambda: self.backend.vod_items(self.category.get("id") or "all", self.query, self.page),
                        self._more_loaded, self._load_failed)
 
     def _more_loaded(self, result):
@@ -850,7 +1016,7 @@ class SeriesScreen(BackendScreen):
     def build(self):
         self.page = 1
         self.status_text(_("Loading ..."))
-        self.run_async(lambda: self.backend.series_items(self.category.get("id") or "all", u"", 1),
+        self.run_async(lambda: self.backend.series_items(self.category.get("id") or "all", self.query, 1),
                        self._first_page, self._load_failed)
 
     def _first_page(self, result):
@@ -892,7 +1058,7 @@ class SeriesScreen(BackendScreen):
     def load_more(self):
         self.page += 1
         self.status_text(_("Loading ..."))
-        self.run_async(lambda: self.backend.series_items(self.category.get("id") or "all", u"", self.page),
+        self.run_async(lambda: self.backend.series_items(self.category.get("id") or "all", self.query, self.page),
                        self._more_loaded, self._load_failed)
 
     def _more_loaded(self, result):
