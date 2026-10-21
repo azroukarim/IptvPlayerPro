@@ -1,0 +1,502 @@
+# -*- coding: utf-8 -*-
+"""Browse screens: live TV, movies and series."""
+
+from __future__ import absolute_import
+
+import os
+
+from Screens.VirtualKeyBoard import VirtualKeyBoard
+
+from ..core.backends import source_label
+from ..core.i18n import _
+from ..core.util import human_count, safe_int, to_text
+from .base import (ListScreen, info_box, pixmap, play_url, row_entry)
+from .info import InfoScreen
+
+
+class BackendScreen(ListScreen):
+    """Base for screens that need a loaded backend catalogue."""
+
+    def __init__(self, session, store, backend, title, subtitle=u"", hint=u""):
+        ListScreen.__init__(self, session, title, subtitle, hint)
+        self.store = store
+        self.backend = backend
+        self.started = False
+        self.query = u""
+        self.page = 1
+        self.total = 0
+
+    def shown_ready(self):
+        if not self.started:
+            self.started = True
+            self.start()
+
+    def start(self):
+        if self.backend is None:
+            info_box(self.session, _("No active playlist") + u"\n" + _("Open the server list and add an M3U playlist or a MAG portal first."))
+            self.close()
+            return
+        if self.backend.is_ready():
+            self.build()
+        else:
+            self.status_text(_("Loading ..."))
+            self.run_async(lambda: self.backend.refresh(), self._loaded, self._load_failed)
+
+    def _loaded(self, _result):
+        self.status_text(u"")
+        self.build()
+
+    def _load_failed(self, error):
+        self.status_text(u"")
+        self.show_error(error)
+
+    def build(self):
+        pass
+
+    def open_child(self, screen_class, *args):
+        self.session.openWithCallback(self.child_closed, screen_class, self.store, self.backend, *args)
+
+    def child_closed(self, result=None):
+        if result == "zapped":
+            self.close("zapped")
+
+    # ------------------------------------------------------------- playback
+    def play_item(self, item):
+        self.status_text(_("Resolving stream ..."))
+        self.run_async(lambda: self.backend.resolve(item), lambda url: self._play(url, item), self._play_failed)
+
+    def _play(self, url, item):
+        self.status_text(u"")
+        try:
+            play_url(self.session, url, safe_int(self.store.settings.get("service_type"), 4097), item.get("name"))
+        except Exception as error:  # noqa: BLE001
+            self.show_error(error)
+            return
+        if self.store.settings.get("close_after_zap", True):
+            self.close("zapped")
+
+    def _play_failed(self, error):
+        self.status_text(u"")
+        self.show_error(error)
+
+    # --------------------------------------------------------------- search
+    def ask_search(self):
+        self.session.openWithCallback(self.search_done, VirtualKeyBoard, title=_("Search ..."), text=self.query)
+
+    def search_done(self, text):
+        if text is None:
+            return
+        self.query = to_text(text).strip()
+        self.build()
+
+    # -------------------------------------------------------------- refresh
+    def reload_backend(self):
+        self.status_text(_("Refreshing ..."))
+        self.run_async(lambda: self.backend.refresh(force=True), self._reloaded, self._load_failed)
+
+    def _reloaded(self, _result):
+        self.status_text(u"")
+        self.build()
+
+
+class LiveCategoriesScreen(BackendScreen):
+    def __init__(self, session, store, backend):
+        BackendScreen.__init__(self, session, store, backend, _("Live TV"),
+                               source_label(store.active_source()), _("OK open  •  RED back"))
+        self.set_hint(_("OK open  •  BLUE reload  •  RED back"))
+
+    def build(self):
+        categories = self.backend.live_categories()
+        rows = []
+        entries = []
+        for category in categories:
+            rows.append(category)
+            icon = pixmap("star.png") if category.get("id") == "fav" else pixmap("folder.png")
+            entries.append(row_entry(
+                1200, 72, category.get("name") or "", icon=icon, icon_size=(44, 44),
+                value=human_count(category.get("count")),
+            ))
+        self.set_entries(entries, rows)
+        self.set_subtitle(u"{0} {1}".format(len(categories), _("categories")))
+        if not categories:
+            self.status_text(_("No channels"))
+
+    def activate(self, row):
+        if safe_int(row.get("count")) == 0 and row.get("id") == "fav":
+            info_box(self.session, _("No channels"))
+            return
+        self.open_child(LiveScreen, row)
+
+    def key_blue(self):
+        self.reload_backend()
+
+
+class LiveScreen(BackendScreen):
+    def __init__(self, session, store, backend, category):
+        BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Live TV"),
+                               u"", _("OK play  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
+        self.category = category
+
+    def build(self):
+        items = self.backend.live_items(self.category.get("id") or "all", self.query)
+        rows = []
+        entries = []
+        for item in items:
+            rows.append(item)
+            favorite = self.backend.is_favorite(item)
+            subtitle = item.get("group") or _("Live TV")
+            if item.get("number"):
+                subtitle = u"{0}  \u2022  {1}".format(item["number"], subtitle)
+            entries.append(row_entry(
+                1200, 72, item.get("name") or "", subtitle=subtitle,
+                icon=self._channel_icon(item), icon_size=(48, 48),
+                badge=u"\u2605" if favorite else None,
+            ))
+        self.set_entries(entries, rows)
+        subtitle = u"{0} {1}".format(len(items), _("channels"))
+        if self.query:
+            subtitle = u"{0}  \u2022  \"{1}\"".format(subtitle, self.query)
+        self.set_subtitle(subtitle)
+        if not items:
+            self.status_text(_("No channels"))
+        else:
+            self.status_text(u"")
+
+    def _channel_icon(self, item):
+        logo = to_text(item.get("logo"))
+        if logo:
+            local = self.store.logo_file(logo)
+            if os.path.exists(local):
+                try:
+                    from Tools.LoadPixmap import LoadPixmap
+                    pointer = LoadPixmap(local)
+                    if pointer is not None:
+                        return pointer
+                except Exception:
+                    pass
+        return pixmap("channel.png")
+
+    def activate(self, item):
+        self.play_item(item)
+
+    def key_ok(self):
+        item = self.current()
+        if item is None:
+            return
+        self.play_item(item)
+
+    def key_green(self):
+        self.ask_search()
+
+    def key_yellow(self):
+        item = self.current()
+        if item is None:
+            return
+        state = self.backend.toggle_favorite(item)
+        self.build()
+        try:
+            self.status_text(_("Added to favorites") if state else _("Removed from favorites"))
+        except Exception:
+            pass
+
+    def key_blue(self):
+        self.query = u""
+        self.reload_backend()
+
+
+class VodCategoriesScreen(BackendScreen):
+    def __init__(self, session, store, backend):
+        BackendScreen.__init__(self, session, store, backend, _("Movies"),
+                               source_label(store.active_source()), _("OK open  •  RED back"))
+        self.set_hint(_("OK open  •  BLUE reload  •  RED back"))
+
+    def build(self):
+        categories = self.backend.vod_categories()
+        rows = []
+        entries = []
+        for category in categories:
+            rows.append(category)
+            entries.append(row_entry(
+                1200, 72, category.get("name") or "", icon=pixmap("folder.png"),
+                icon_size=(44, 44), value=human_count(category.get("count")) if category.get("count") else None,
+            ))
+        self.set_entries(entries, rows)
+        self.set_subtitle(u"{0} {1}".format(len(categories), _("categories")))
+        if not rows:
+            self.status_text(_("No movies"))
+
+    def activate(self, row):
+        self.open_child(VodScreen, row)
+
+    def key_blue(self):
+        self.reload_backend()
+
+
+class VodScreen(BackendScreen):
+    def __init__(self, session, store, backend, category):
+        BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Movies"),
+                               u"", _("OK play  •  GREEN search  •  BLUE reload  •  RED back"))
+        self.category = category
+        self.items = []
+        self.loaded_pages = 0
+
+    def build(self):
+        self.page = 1
+        self.status_text(_("Loading ..."))
+        self.run_async(lambda: self.backend.vod_items(self.category.get("id") or "all", u"", 1),
+                       self._first_page, self._load_failed)
+
+    def _first_page(self, result):
+        items, total = result
+        self.items = list(items)
+        self.total = total
+        self.loaded_pages = 1
+        self.status_text(u"")
+        self.render()
+
+    def render(self):
+        query = self.query.lower()
+        visible = [item for item in self.items if not query or query in to_text(item.get("name")).lower()]
+        rows = []
+        entries = []
+        for item in visible:
+            rows.append(item)
+            entries.append(row_entry(
+                1200, 78, item.get("name") or "",
+                subtitle=self._meta(item), icon=pixmap("movie.png"), icon_size=(46, 66),
+            ))
+        if len(self.items) < self.total:
+            rows.append({"type": "more"})
+            entries.append(row_entry(1200, 60, _("Load more ..."), icon=pixmap("more.png"), icon_size=(36, 36)))
+        self.set_entries(entries, rows)
+        subtitle = u"{0} {1}".format(self.total or len(self.items), _("movies"))
+        if query:
+            subtitle = u"{0}  \u2022  \"{1}\"".format(subtitle, self.query)
+        self.set_subtitle(subtitle)
+        if not visible and not (len(self.items) < self.total):
+            self.status_text(_("No movies"))
+
+    @staticmethod
+    def _meta(item):
+        parts = []
+        if item.get("year"):
+            parts.append(to_text(item["year"]))
+        if item.get("genres"):
+            parts.append(to_text(item["genres"]))
+        if item.get("rating"):
+            parts.append(u"\u2605 " + to_text(item["rating"]))
+        return u"  \u2022  ".join(parts)
+
+    def activate(self, row):
+        if row.get("type") == "more":
+            self.load_more()
+            return
+        self.open_child(InfoScreen, row)
+
+    def load_more(self):
+        self.page += 1
+        self.status_text(_("Loading ..."))
+        self.run_async(lambda: self.backend.vod_items(self.category.get("id") or "all", u"", self.page),
+                       self._more_loaded, self._load_failed)
+
+    def _more_loaded(self, result):
+        items, total = result
+        self.items.extend(items)
+        self.total = total
+        self.loaded_pages += 1
+        self.status_text(u"")
+        self.render()
+
+    def key_green(self):
+        self.ask_search()
+
+    def key_blue(self):
+        self.query = u""
+        self.reload_backend()
+
+
+class SeriesCategoriesScreen(BackendScreen):
+    def __init__(self, session, store, backend):
+        BackendScreen.__init__(self, session, store, backend, _("Series"),
+                               source_label(store.active_source()), _("OK open  •  RED back"))
+        self.set_hint(_("OK open  •  BLUE reload  •  RED back"))
+
+    def build(self):
+        categories = self.backend.series_categories()
+        rows = []
+        entries = []
+        for category in categories:
+            rows.append(category)
+            entries.append(row_entry(
+                1200, 72, category.get("name") or "", icon=pixmap("folder.png"),
+                icon_size=(44, 44), value=human_count(category.get("count")) if category.get("count") else None,
+            ))
+        self.set_entries(entries, rows)
+        self.set_subtitle(u"{0} {1}".format(len(categories), _("categories")))
+        if not rows:
+            self.status_text(_("No series"))
+
+    def activate(self, row):
+        self.open_child(SeriesScreen, row)
+
+    def key_blue(self):
+        self.reload_backend()
+
+
+class SeriesScreen(BackendScreen):
+    def __init__(self, session, store, backend, category):
+        BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Series"),
+                               u"", _("OK open  •  GREEN search  •  BLUE reload  •  RED back"))
+        self.category = category
+        self.items = []
+        self.total = 0
+
+    def build(self):
+        self.page = 1
+        self.status_text(_("Loading ..."))
+        self.run_async(lambda: self.backend.series_items(self.category.get("id") or "all", u"", 1),
+                       self._first_page, self._load_failed)
+
+    def _first_page(self, result):
+        items, total = result
+        self.items = list(items)
+        self.total = total
+        self.status_text(u"")
+        self.render()
+
+    def render(self):
+        query = self.query.lower()
+        visible = [item for item in self.items if not query or query in to_text(item.get("name")).lower()]
+        rows = []
+        entries = []
+        for item in visible:
+            rows.append(item)
+            subtitle = u"{0} {1}".format(safe_int(item.get("count")), _("episodes"))
+            if item.get("group"):
+                subtitle = u"{0}  \u2022  {1}".format(item["group"], subtitle)
+            entries.append(row_entry(
+                1200, 78, item.get("name") or "", subtitle=subtitle,
+                icon=pixmap("series_card.png"), icon_size=(46, 66),
+            ))
+        if len(self.items) < self.total:
+            rows.append({"type": "more"})
+            entries.append(row_entry(1200, 60, _("Load more ..."), icon=pixmap("more.png"), icon_size=(36, 36)))
+        self.set_entries(entries, rows)
+        subtitle = u"{0} {1}".format(self.total or len(self.items), _("series"))
+        self.set_subtitle(subtitle)
+        if not visible and not (len(self.items) < self.total):
+            self.status_text(_("No series"))
+
+    def activate(self, row):
+        if row.get("type") == "more":
+            self.load_more()
+            return
+        self.open_child(SeasonsScreen, row)
+
+    def load_more(self):
+        self.page += 1
+        self.status_text(_("Loading ..."))
+        self.run_async(lambda: self.backend.series_items(self.category.get("id") or "all", u"", self.page),
+                       self._more_loaded, self._load_failed)
+
+    def _more_loaded(self, result):
+        items, total = result
+        self.items.extend(items)
+        self.total = total
+        self.status_text(u"")
+        self.render()
+
+    def key_green(self):
+        self.ask_search()
+
+    def key_blue(self):
+        self.query = u""
+        self.reload_backend()
+
+
+class SeasonsScreen(BackendScreen):
+    def __init__(self, session, store, backend, series):
+        BackendScreen.__init__(self, session, store, backend, series.get("name") or _("Series"),
+                               u"", _("OK open  •  RED back"))
+        self.series = series
+
+    def build(self):
+        self.status_text(_("Loading ..."))
+        self.run_async(lambda: self.backend.seasons(self.series.get("id")), self._seasons_loaded, self._load_failed)
+
+    def _seasons_loaded(self, seasons):
+        self.status_text(u"")
+        rows = []
+        entries = []
+        for season in seasons:
+            rows.append(season)
+            entries.append(row_entry(
+                1200, 72, season.get("name") or "", icon=pixmap("folder.png"),
+                icon_size=(44, 44), value=u"{0} {1}".format(safe_int(season.get("count")), _("episodes")),
+            ))
+        self.set_entries(entries, rows)
+        self.set_subtitle(u"{0}  \u2022  {1} {2}".format(self.series.get("name") or "", len(seasons), _("Seasons")))
+        if not rows:
+            self.status_text(_("No episodes"))
+
+    def activate(self, row):
+        self.open_child(EpisodesScreen, self.series, row)
+
+
+class EpisodesScreen(BackendScreen):
+    def __init__(self, session, store, backend, series, season):
+        BackendScreen.__init__(self, session, store, backend, series.get("name") or _("Series"),
+                               u"", _("OK play  •  RED back"))
+        self.series = series
+        self.season = season
+        self.items = []
+        self.total = 0
+        self.page = 1
+
+    def build(self):
+        self.status_text(_("Loading ..."))
+        self.run_async(lambda: self.backend.episodes(self.series.get("id"), self.season.get("id"), 1),
+                       self._first_page, self._load_failed)
+
+    def _first_page(self, result):
+        items, total = result
+        self.items = list(items)
+        self.total = total
+        self.page = 1
+        self.status_text(u"")
+        self.render()
+
+    def render(self):
+        rows = []
+        entries = []
+        for item in self.items:
+            rows.append(item)
+            entries.append(row_entry(
+                1200, 76, item.get("name") or "",
+                subtitle=item.get("description") or item.get("genres") or _("Episode"),
+                icon=pixmap("episode.png"), icon_size=(44, 44),
+            ))
+        if len(self.items) < self.total:
+            rows.append({"type": "more"})
+            entries.append(row_entry(1200, 60, _("Load more ..."), icon=pixmap("more.png"), icon_size=(36, 36)))
+        self.set_entries(entries, rows)
+        self.set_subtitle(u"{0}  \u2022  {1} {2}".format(
+            self.season.get("name") or "", len(self.items), _("episodes")))
+        if not rows:
+            self.status_text(_("No episodes"))
+
+    def activate(self, row):
+        if row.get("type") == "more":
+            self.page += 1
+            self.status_text(_("Loading ..."))
+            self.run_async(lambda: self.backend.episodes(self.series.get("id"), self.season.get("id"), self.page),
+                           self._more_loaded, self._load_failed)
+            return
+        self.play_item(row)
+
+    def _more_loaded(self, result):
+        items, total = result
+        self.items.extend(items)
+        self.total = total
+        self.status_text(u"")
+        self.render()
