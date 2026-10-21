@@ -5,6 +5,7 @@ from __future__ import absolute_import
 
 import os
 import threading
+import time
 
 from enigma import (RT_HALIGN_CENTER, RT_HALIGN_LEFT, RT_HALIGN_RIGHT,
                     RT_VALIGN_CENTER, eListboxPythonMultiContent, ePicLoad,
@@ -182,8 +183,15 @@ class AsyncScreen(Screen):
                 pass
         self._timers = []
 
-    def run_async(self, fn, on_done, on_error=None):
+    def run_async(self, fn, on_done, on_error=None, timeout=None, on_wait=None):
+        """Run *fn* in a worker thread and deliver the result on the UI thread.
+
+        The timer is deliberately re-armed after every poll.  Some older
+        Enigma2 images only support single-shot timers, and relying on the
+        repeating flag could leave a screen on "Loading ..." forever.
+        """
         box = {"done": False, "result": None, "error": None}
+        started = time.time()
 
         def worker():
             try:
@@ -198,9 +206,12 @@ class AsyncScreen(Screen):
 
         timer = eTimer()
 
-        def poll():
-            if not box["done"]:
-                return
+        def arm():
+            # One argument works on every eTimer version; the poll function
+            # re-arms the timer when the worker is not finished yet.
+            timer.start(120)
+
+        def finish():
             try:
                 timer.stop()
             except Exception:
@@ -209,13 +220,33 @@ class AsyncScreen(Screen):
                 self._timers.remove(timer)
             except Exception:
                 pass
+
+        def fail(error):
+            if not self._alive:
+                return
+            if on_error:
+                on_error(error)
+            else:
+                self.show_error(error)
+
+        def poll():
+            if not box["done"]:
+                if timeout and time.time() - started >= timeout:
+                    finish()
+                    fail(NetError(_("Loading took too long. Check the connection and try again.")))
+                    return
+                if on_wait is not None:
+                    try:
+                        on_wait()
+                    except Exception:
+                        pass
+                arm()
+                return
+            finish()
             if not self._alive:
                 return
             if box["error"] is not None:
-                if on_error:
-                    on_error(box["error"])
-                else:
-                    self.show_error(box["error"])
+                fail(box["error"])
             else:
                 try:
                     on_done(box["result"])
@@ -224,7 +255,7 @@ class AsyncScreen(Screen):
 
         timer.callback.append(poll)
         self._timers.append(timer)
-        timer.start(120, False)
+        arm()
 
     def show_error(self, error):
         message = _(to_text(error) or _("Error"))

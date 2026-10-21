@@ -18,7 +18,7 @@ from .util import (atomic_write, ensure_dir, md5, now, read_json, safe_int,
 _STORE_LOCK = threading.RLock()
 
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 CONFIG_CANDIDATES = [
     "/etc/enigma2/iptvplayerpro",

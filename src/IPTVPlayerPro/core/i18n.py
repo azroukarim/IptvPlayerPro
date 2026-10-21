@@ -55,6 +55,8 @@ _AR = {
     "Search": u"بحث",
     "Search ...": u"بحث ...",
     "Loading ...": u"جارٍ التحميل ...",
+    "Loading took too long. Check the connection and try again.":
+        u"استغرق التحميل وقتًا طويلًا. تحقق من الاتصال وحاول مجددًا.",
     "Downloading playlist ...": u"جارٍ تحميل القائمة ...",
     "Reading playlist ...": u"جارٍ قراءة القائمة ...",
     "Connecting to the portal ...": u"جارٍ الاتصال بالبورتال ...",

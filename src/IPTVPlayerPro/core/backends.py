@@ -153,7 +153,10 @@ class M3UBackend(BaseBackend):
         headers = {}
         if self.source.get("ua"):
             headers["User-Agent"] = self.source.get("ua")
-        http = Http(timeout=timeout, user_agent=headers.get("User-Agent"))
+        # A failed playlist download must fail visibly instead of keeping the
+        # screen on "Loading ..." for several retry cycles.  BLUE reload gives
+        # the user an explicit retry.
+        http = Http(timeout=timeout, user_agent=headers.get("User-Agent"), retries=0)
         text = http.get_text(url, headers=headers)
         if progress:
             progress(_("Reading playlist ..."))

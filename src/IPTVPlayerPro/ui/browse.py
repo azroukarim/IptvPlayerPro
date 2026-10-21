@@ -39,8 +39,21 @@ class BackendScreen(ListScreen):
         if self.backend.is_ready():
             self.build()
         else:
-            self.status_text(_("Loading ..."))
-            self.run_async(lambda: self.backend.refresh(), self._loaded, self._load_failed)
+            progress = {"text": _("Loading ...")}
+
+            def report(text):
+                progress["text"] = to_text(text)
+
+            network_timeout = safe_int(self.store.settings.get("timeout"), 20)
+            limit = max(45, network_timeout * 3 + 10)
+            self.status_text(progress["text"])
+            self.run_async(
+                lambda: self.backend.refresh(progress=report),
+                self._loaded,
+                self._load_failed,
+                timeout=limit,
+                on_wait=lambda: self.status_text(progress["text"]),
+            )
 
     def _loaded(self, _result):
         self.status_text(u"")
@@ -91,8 +104,21 @@ class BackendScreen(ListScreen):
 
     # -------------------------------------------------------------- refresh
     def reload_backend(self):
-        self.status_text(_("Refreshing ..."))
-        self.run_async(lambda: self.backend.refresh(force=True), self._reloaded, self._load_failed)
+        progress = {"text": _("Refreshing ...")}
+
+        def report(text):
+            progress["text"] = to_text(text)
+
+        network_timeout = safe_int(self.store.settings.get("timeout"), 20)
+        limit = max(45, network_timeout * 3 + 10)
+        self.status_text(progress["text"])
+        self.run_async(
+            lambda: self.backend.refresh(force=True, progress=report),
+            self._reloaded,
+            self._load_failed,
+            timeout=limit,
+            on_wait=lambda: self.status_text(progress["text"]),
+        )
 
     def _reloaded(self, _result):
         self.status_text(u"")
