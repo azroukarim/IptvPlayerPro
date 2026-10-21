@@ -18,6 +18,35 @@
 
 ## التثبيت
 
+### التثبيت السريع بسكريبت
+
+من Telnet/SSH على الرسيفر:
+
+```sh
+wget -q --no-check-certificate -O /tmp/iptvpro.sh \
+  https://raw.githubusercontent.com/azroukarim/IptvPlayerPro/main/install.sh
+sh /tmp/iptvpro.sh
+```
+
+أو باستخدام curl:
+
+```sh
+curl -k -L -o /tmp/iptvpro.sh \
+  https://raw.githubusercontent.com/azroukarim/IptvPlayerPro/main/install.sh
+sh /tmp/iptvpro.sh
+```
+
+السكريبت يقوم تلقائيًا بتنزيل ملف `ipk` من GitHub، وتثبيته عبر `opkg`، ثم إعادة تشغيل واجهة Enigma2.
+
+خيارات إضافية:
+
+```sh
+sh /tmp/iptvpro.sh --no-restart      # تثبيت بدون إعادة تشغيل
+sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.0.0_all.ipk
+```
+
+إذا نسخت `install.sh` وملف `ipk` إلى نفس المجلد على الرسيفر، فسيستخدم السكريبت الملف المحلي دون تنزيل.
+
 ### عبر ملف ipk
 
 1. حمّل الملف من مجلد `dist`:
