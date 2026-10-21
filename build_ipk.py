@@ -107,7 +107,7 @@ def make_data_tar(mtime):
         for part in PLUGIN_DIR.split("/"):
             current += "/" + part
             add_dir(archive, current, mtime)
-        for folder in ("core", "ui", "images"):
+        for folder in ("core", "ui", "web", "images"):
             add_dir(archive, current + "/" + folder, mtime)
         for relative, absolute in iter_files():
             handle = io.open(absolute, "rb")

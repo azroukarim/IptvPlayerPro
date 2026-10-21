@@ -74,7 +74,7 @@ class MainMenu(AsyncScreen):
         }, prio=0, description=_("IPTV Player Pro"))
 
         self.onLayoutFinish.append(self.layout_ready)
-        self.onShown.append(self.update_status)
+        self.onShown.append(self.on_shown)
 
     # -------------------------------------------------------------- layout
     def layout_ready(self):
@@ -88,6 +88,26 @@ class MainMenu(AsyncScreen):
             self["l{0}".format(index)].setText(_(tile["label"]))
         self._set_focus(0)
         self.update_status()
+        self.ensure_web_interface()
+
+    def on_shown(self):
+        # The web interface writes the same config file.  Reload it so a
+        # source added from a browser is visible immediately.
+        try:
+            self.store.load()
+        except Exception:
+            pass
+        set_language(self.store.settings.get("language") or "ar")
+        self.backend = active_backend(self.store)
+        self.apply_language()
+        self.ensure_web_interface()
+
+    def ensure_web_interface(self):
+        try:
+            from ..web.server import manager
+            manager.ensure(self.store)
+        except Exception:
+            pass
 
     def apply_language(self):
         for tile in TILES:

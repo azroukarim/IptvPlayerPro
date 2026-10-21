@@ -144,7 +144,10 @@ def test_playlist():
 def test_store(tmp):
     print("[store]")
     set_language("en")
-    store = Store(config_dir=os.path.join(tmp, "conf"), cache_dir=os.path.join(tmp, "cache"))
+    conf = os.path.join(tmp, "conf")
+    store = Store(config_dir=conf, cache_dir=os.path.join(tmp, "cache"))
+    store.set_setting("m3u_file", os.path.join(conf, "m3u.txt"))
+    store.set_setting("mac_file", os.path.join(conf, "mac.txt"))
     source = store.new_source("m3u", "My List", "http://example.com/list.m3u")
     check(store.active_id() == source["id"], "first source becomes active")
     check(store.set_active(source["id"]), "set active works")
@@ -153,12 +156,27 @@ def test_store(tmp):
     reloaded = Store(config_dir=os.path.join(tmp, "conf"), cache_dir=os.path.join(tmp, "cache"))
     check(len(reloaded.sources) == 1, "source persisted")
     check(reloaded.sources[0]["info"]["channels"] == 10, "info persisted")
+    m3u_path = os.path.join(conf, "m3u.txt")
+    check(os.path.exists(m3u_path), "m3u text file written")
+    handle = open(m3u_path, "rb")
+    try:
+        m3u_text = handle.read().decode("utf-8")
+    finally:
+        handle.close()
+    check("My List|http://example.com/list.m3u" in m3u_text, "m3u text content")
     backend = M3UBackend(reloaded.active_source(), reloaded)
     summary = source_summary(reloaded.active_source(), reloaded)
     check("10" in summary and "channels" in summary, "summary shows counts")
     key = backend.favorite_key({"name": "x", "url": "http://x"})
     check(reloaded.toggle_favorite(source["id"], key) is True, "favorite added")
     check(reloaded.toggle_favorite(source["id"], key) is False, "favorite removed")
+    handle = open(m3u_path, "ab")
+    try:
+        handle.write(b"Second|http://example.com/second.m3u|\n")
+    finally:
+        handle.close()
+    result = reloaded.import_server_files()
+    check(result["added"] == 1 and len(reloaded.sources) == 2, "servers imported from text file")
 
 
 def test_mag(tmp):
@@ -196,7 +214,10 @@ def test_mag(tmp):
     link = client.create_link("itv", "ffmpeg http://portal/live/11.m3u8")
     check(link == "http://portal/stream/play.m3u8", "create_link strips prefix")
 
-    store = Store(config_dir=os.path.join(tmp, "magconf"), cache_dir=os.path.join(tmp, "magcache"))
+    magconf = os.path.join(tmp, "magconf")
+    store = Store(config_dir=magconf, cache_dir=os.path.join(tmp, "magcache"))
+    store.set_setting("m3u_file", os.path.join(magconf, "m3u.txt"))
+    store.set_setting("mac_file", os.path.join(magconf, "mac.txt"))
     source = store.new_source("mag", "Portal", url, "00:1A:79:11:22:33")
     backend = MagBackend(source, store)
     check(backend.refresh(force=True) is True, "backend refresh")
@@ -215,6 +236,14 @@ def test_mag(tmp):
     check(len(episodes) == 2, "backend episodes")
     check(backend.resolve(episodes[0]) == "http://portal/stream/play.m3u8", "resolve episode")
     check(store.get_source(source["id"])["info"]["expires"] == "2027-01-01 00:00:00", "expiry stored")
+    mac_path = os.path.join(magconf, "mac.txt")
+    check(os.path.exists(mac_path), "mac text file written")
+    handle = open(mac_path, "rb")
+    try:
+        mac_text = handle.read().decode("utf-8")
+    finally:
+        handle.close()
+    check("00:1A:79:11:22:33" in mac_text and "Portal|http" in mac_text, "mac text content")
     server.shutdown()
 
 

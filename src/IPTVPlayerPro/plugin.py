@@ -14,8 +14,23 @@ def main(session, **kwargs):
     session.open(MainMenu)
 
 
+def autostart(reason, **kwargs):
+    """Start/stop the local web interface together with Enigma2."""
+    try:
+        from .web.server import manager
+        if reason == 0:
+            from .core.store import Store
+            store = Store()
+            if store.settings.get("web_enabled", True):
+                manager.ensure(store)
+        elif reason == 1:
+            manager.stop()
+    except Exception:
+        pass
+
+
 def Plugins(**kwargs):
-    return [
+    descriptors = [
         PluginDescriptor(
             name="IPTV Player Pro",
             description=_("M3U & MAG/Stalker player") + u"  v" + VERSION,
@@ -24,3 +39,9 @@ def Plugins(**kwargs):
             fnc=main,
         )
     ]
+    if hasattr(PluginDescriptor, "WHERE_AUTOSTART"):
+        descriptors.append(PluginDescriptor(
+            where=[PluginDescriptor.WHERE_AUTOSTART],
+            fnc=autostart,
+        ))
+    return descriptors

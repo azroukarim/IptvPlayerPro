@@ -385,6 +385,9 @@ def main():
         from IPTVPlayerPro import plugin as plugin_module
 
         store = Store(config_dir=work, cache_dir=work)
+        store.set_setting("web_enabled", False)
+        store.set_setting("m3u_file", os.path.join(work, "m3u.txt"))
+        store.set_setting("mac_file", os.path.join(work, "mac.txt"))
         menu_module.Store = lambda: store
         session = Session()
 
@@ -425,7 +428,7 @@ def main():
             assert screen["title"].text
 
         descriptors = plugin_module.Plugins()
-        assert len(descriptors) == 1
+        assert len(descriptors) >= 1
         assert descriptors[0].name == "IPTV Player Pro"
         print("UI smoke test passed: {0} screens constructed.".format(len(screens) + 4))
     finally:
