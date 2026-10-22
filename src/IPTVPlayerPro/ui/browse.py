@@ -291,6 +291,7 @@ class LiveBrowserScreen(BackendScreen):
         self._preview_active = False
         self._preview_timer = None
         self._preview_attempts = 0
+        self._preview_static = False
 
         self["bg"] = Pixmap()
         self["header"] = Pixmap()
@@ -518,10 +519,11 @@ class LiveBrowserScreen(BackendScreen):
             pass
 
         rect = self._preview_rect()
-        if not self._legacy_rect_matches(rect.left(), rect.top(),
-                                         rect.width(), rect.height()):
+        if not self._preview_static or not self._legacy_rect_matches(
+                rect.left(), rect.top(), rect.width(), rect.height()):
             try:
                 instance.setFullScreenPosition(rect)
+                self._preview_static = True
             except Exception as error:  # noqa: BLE001
                 self._log_preview("setFullScreenPosition failed: {0}".format(error))
 
@@ -554,6 +556,7 @@ class LiveBrowserScreen(BackendScreen):
                 pass
             if not aml:
                 self._write_legacy_video_rect(0, 0, 720, 576)
+        self._preview_static = False
         if widget is not None:
             try:
                 widget.hide()
