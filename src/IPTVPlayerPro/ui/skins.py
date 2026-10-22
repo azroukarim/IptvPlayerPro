@@ -83,8 +83,11 @@ LIVE_SKIN = """
 </screen>
 """
 
+# Enigma2 stores transparency in the alpha byte: #00000000 is opaque black,
+# while "transparent" (or #ff000000) is fully transparent.  The player screen
+# must leave the centre transparent so the running video stays visible.
 PLAYER_SKIN = """
-<screen name="IPTVProPlayer" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder" backgroundColor="#00000000">
+<screen name="IPTVProPlayer" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder" backgroundColor="transparent">
     <widget name="topBar" position="0,0" size="1280,70" alphatest="blend" scale="1" />
     <widget name="logo" position="22,12" size="120,44" alphatest="blend" scale="1" />
     <widget name="title" position="158,12" size="500,44" font="Regular;24" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" />

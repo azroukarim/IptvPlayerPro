@@ -727,9 +727,14 @@ def main():
                      "previewName", "previewVideo", "playBg", "favBg", "hint"):
             assert name in skin_names, name
 
+        player_skin = ET.fromstring(PLAYER_SKIN)
+        # Enigma2 stores transparency in the alpha byte (0x00 opaque,
+        # 0xFF invisible), so "#00000000" would paint an opaque black screen
+        # over the running video.  The player root must be transparent.
+        assert player_skin.get("backgroundColor") in ("transparent", "#ff000000")
         player_skin_names = set(
             widget.get("name")
-            for widget in ET.fromstring(PLAYER_SKIN).findall("widget"))
+            for widget in player_skin.findall("widget"))
         for name in ("topBar", "logo", "title", "clock", "bottomBar", "logoBg",
                      "channelLogo", "channelName", "channelMeta", "liveBg",
                      "liveLabel", "volumeText", "hint"):
