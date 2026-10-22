@@ -110,13 +110,15 @@ class MultiList(MenuList):
 class LiveList(MenuList):
     """Compact list used by the three-column live browser."""
 
-    def __init__(self, item_height=52):
+    def __init__(self, item_height=58):
         MenuList.__init__(self, [], False, eListboxPythonMultiContent)
         self.l.setItemHeight(item_height)
-        self.l.setFont(0, font(16))
-        self.l.setFont(1, font(14))
-        self.l.setFont(2, font(20, True))
-        self.l.setFont(3, font(24, True))
+        self.l.setFont(0, font(18))
+        self.l.setFont(1, font(16))
+        # Category and channel names use a noticeably larger face so the
+        # three-column browser stays readable from a normal viewing distance.
+        self.l.setFont(2, font(24, True))
+        self.l.setFont(3, font(26, True))
 
 
 def category_entry(width, height, title, value=None):
@@ -129,15 +131,15 @@ def category_entry(width, height, title, value=None):
             backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
         )
     ]
-    value_width = 74 if value else 0
+    value_width = 66 if value else 0
     entries.append(MultiContentEntryText(
-        pos=(16, 0), size=(width - 16 - value_width - 16, height),
+        pos=(16, 0), size=(width - 16 - value_width - 10, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
         text=title, color=LIVE_TEXT, color_sel=WHITE,
     ))
     if value:
         entries.append(MultiContentEntryText(
-            pos=(width - value_width - 12, 0), size=(value_width, height),
+            pos=(width - value_width - 10, 0), size=(value_width, height),
             font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
             text=value, color=LIVE_MUTED, color_sel=WHITE,
         ))
@@ -159,7 +161,7 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
     number_width = 42 if number_text else 0
     if number_text:
         entries.append(MultiContentEntryText(
-            pos=(width - number_width - 8, 0), size=(number_width, height),
+            pos=(width - number_width - 6, 0), size=(number_width, height),
             font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
             text=number_text, color=LIVE_MUTED, color_sel=WHITE,
         ))
@@ -170,7 +172,7 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
         ))
     text_x = icon_x + 44
     badge_width = 26 if favorite else 0
-    text_width = max(40, width - text_x - number_width - badge_width - 18)
+    text_width = max(40, width - text_x - number_width - badge_width - 12)
     entries.append(MultiContentEntryText(
         pos=(text_x, 0), size=(text_width, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,

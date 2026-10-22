@@ -81,25 +81,35 @@ def make_header():
     image = vertical_gradient((1280, 80), (28, 30, 78), (12, 14, 35)).convert("RGBA")
     draw = ImageDraw.Draw(image)
     draw.line([(0, 79), (1280, 79)], fill=(83, 82, 142, 255), width=1)
-    draw.rectangle([0, 0, 1280, 2], fill=(81, 68, 147, 190))
+    draw.rectangle([0, 0, 1280, 2], fill=(81, 68, 147, 255))
     save(image, "live_header.png")
 
 
 def make_panels():
-    save(rounded_panel((300, 640), (10, 13, 34, 228), (54, 57, 103, 255), 0, 0),
+    # Keep every panel opaque.  The only transparent area must be the video
+    # cut-out itself; otherwise the TV service that was playing before the
+    # plugin opened bleeds through the OSD as a blurred ghost image.
+    save(rounded_panel((300, 640), (10, 13, 34, 255), (54, 57, 103, 255), 0, 0),
          "live_panel_left.png")
-    save(rounded_panel((420, 640), (15, 17, 43, 224), (54, 57, 103, 255), 0, 0),
+    save(rounded_panel((420, 640), (15, 17, 43, 255), (54, 57, 103, 255), 0, 0),
          "live_panel_mid.png")
-    right_panel = rounded_panel((560, 640), (12, 14, 38, 232), (54, 57, 103, 255), 0, 0)
+    right_panel = rounded_panel((560, 640), (12, 14, 38, 255), (54, 57, 103, 255), 0, 0)
     clear_box(right_panel, RIGHT_PANEL_VIDEO_BOX)
     save(right_panel, "live_panel_right.png")
-    save(rounded_panel((512, 300), (4, 5, 12, 245), (54, 57, 103, 255), 14, 2),
-         "live_preview.png")
-    save(rounded_panel((430, 42), (20, 23, 57, 235), (100, 98, 173, 255), 21, 2),
+    # The idle placeholder covers the cut-out completely, so the previous
+    # channel stays hidden until the user starts a stream in the mini TV.
+    # Fill the whole rectangle (including the one-pixel edge) and draw the
+    # rounded outline inside it; a transparent rim would let the old video
+    # leak through as a thin bright frame.
+    preview = Image.new("RGBA", (512, 300), (4, 5, 12, 255))
+    ImageDraw.Draw(preview).rounded_rectangle(
+        [1, 1, 510, 298], radius=14, outline=(54, 57, 103, 255), width=2)
+    save(preview, "live_preview.png")
+    save(rounded_panel((430, 42), (20, 23, 57, 255), (100, 98, 173, 255), 21, 2),
          "live_search.png")
-    save(rounded_panel((230, 48), (75, 64, 139, 245), (139, 124, 205, 255), 9, 2),
+    save(rounded_panel((230, 48), (75, 64, 139, 255), (139, 124, 205, 255), 9, 2),
          "live_button.png")
-    save(rounded_panel((266, 48), (57, 49, 110, 235), (118, 108, 177, 255), 9, 2),
+    save(rounded_panel((266, 48), (57, 49, 110, 255), (118, 108, 177, 255), 9, 2),
          "live_button_dark.png")
 
 
