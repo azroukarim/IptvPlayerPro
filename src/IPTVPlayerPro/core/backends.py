@@ -359,34 +359,18 @@ class M3UBackend(BaseBackend):
 
     def live_items(self, category_id, query=""):
         self._ensure_live_groups()
-        try:
-            if category_id == "fav":
-                favorites = self.favorite_keys()
-                items = [item for item in self.live if self.favorite_key(item) in favorites]
-            elif category_id.startswith("g:"):
-                items = self._live_groups.get(category_id[2:]) or []
-                if not items and self.live:
-                    group = category_id[2:]
-                    items = [item for item in self.live if (item.get("group") or "Live TV") == group]
-            else:
-                items = list(self.live)
-            if query:
-                items = [item for item in items if _match(item.get("name"), query)]
-            return items
-        except Exception as error:
-            _logger.exception("M3U live_items failed: %s", error)
-            # Ultimate fallback: scan the full list.
-            if category_id == "fav":
-                try:
-                    favorites = set(self.store.favorites(self.source_id))
-                    return [item for item in self.live if self.favorite_key(item) in favorites]
-                except Exception:
-                    return []
-            elif category_id.startswith("g:"):
-                group = category_id[2:]
-                return [item for item in self.live if (item.get("group") or "Live TV") == group]
-            else:
-                return list(self.live)
+        if category_id == "fav":
+            favorites = self.favorite_keys()
+            items = [item for item in self.live if self.favorite_key(item) in favorites]
+        elif category_id.startswith("g:"):
+            items = self._live_groups.get(category_id[2:]) or []
+            # Direct index access - no fallback scan (causes lag).
+            # If index empty, return empty list; caller will show empty category.
+        else:
+            items = list(self.live)
+        if query:
+            items = [item for item in items if _match(item.get("name"), query)]
+        return items
 
     def favorite_key(self, item):
         return item.get("fav_key") or favourite_key(item)
@@ -827,9 +811,8 @@ class MagBackend(BaseBackend):
                          if self.favorite_key(item) in favorites]
             elif category_id.startswith("g:"):
                 items = self._live_groups.get(category_id[2:]) or []
-                if not items and self.channels:
-                    group = category_id[2:]
-                    items = [item for item in self.channels if to_text(item.get("group") or "") == group]
+                # fallback removed - direct index access
+    # fallback removed - direct index access
             else:
                 items = self.channels
             if query:
