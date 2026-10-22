@@ -37,8 +37,12 @@ class Timer(object):
     def __init__(self):
         self.callback = Signal()
         self.running = False
+        self.interval = 0
+        self.single = False
 
     def start(self, interval=0, single=False):
+        self.interval = interval
+        self.single = single
         self.running = True
 
     def stop(self):
@@ -748,17 +752,43 @@ def main():
         assert "News" in player["channelMeta"].text
         assert player["liveLabel"].text == "LIVE"
         assert player["hint"].text
+        assert player["actions"].actions["up"] == player.key_up
+        assert player["actions"].actions["cancel"] == player.key_back
+
+        # The information bar starts visible and disappears after five
+        # seconds.  OK or a volume key brings it back for another five
+        # seconds, while UP/BACK returns to the mini TV browser.
+        assert player._info_timer is not None
+        assert player._info_timer.running
+        assert player._info_timer.interval == 5000
+        assert player._info_timer.single is True
+        player._hide_info()
+        assert player["topBar"].visible is False
+        assert player._info_timer is None
+
+        player.toggle_info()
+        assert player["topBar"].visible is True
+        assert player._info_timer.running
         player.toggle_info()
         assert player["topBar"].visible is False
+        assert player._info_timer is None
+
         player.toggle_info()
         assert player["topBar"].visible is True
         player._start_clock()
         player._tick()
         player.volume_up()
+        assert player["topBar"].visible is True
+        assert player._info_timer.running
         player.volume_down()
         player.toggle_mute()
+        assert player["topBar"].visible is True
+        assert player._info_timer.running
+        player.key_up()
+        assert player.closed == ()
         player.doClose()
         assert player._clock_timer is None
+        assert player._info_timer is None
 
         from IPTVPlayerPro.ui.base import play_url
 

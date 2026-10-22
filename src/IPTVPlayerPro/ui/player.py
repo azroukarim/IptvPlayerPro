@@ -18,6 +18,9 @@ from .base import pixmap
 from .skins import PLAYER_SKIN
 
 
+INFO_BAR_TIMEOUT = 5000
+
+
 class LivePlayerScreen(Screen):
     """Show the running Live TV service full-screen.
 
@@ -36,6 +39,7 @@ class LivePlayerScreen(Screen):
         self._logo = logo
         self._info_visible = True
         self._clock_timer = None
+        self._info_timer = None
 
         self["topBar"] = Pixmap()
         self["logo"] = Pixmap()
@@ -55,8 +59,9 @@ class LivePlayerScreen(Screen):
             "NavigationActions", "OkCancelActions", "ColorActions",
         ], {
             "ok": self.toggle_info,
-            "cancel": self.close,
-            "red": self.close,
+            "cancel": self.key_back,
+            "up": self.key_up,
+            "red": self.key_back,
             "yellow": self.toggle_mute,
             "left": self.volume_down,
             "right": self.volume_up,
@@ -64,7 +69,7 @@ class LivePlayerScreen(Screen):
 
         self.onLayoutFinish.append(self._layout_ready)
         self.onShow.append(self._start_clock)
-        self.onClose.append(self._stop_clock)
+        self.onClose.append(self._stop_timers)
 
     # -------------------------------------------------------------- layout
     def _layout_ready(self):
@@ -92,9 +97,10 @@ class LivePlayerScreen(Screen):
             u"  \u2022  ".join(meta) if meta else _("Live TV"))
         self["liveLabel"].setText(u"LIVE")
         self["hint"].setText(
-            _("OK info  \u2022  LEFT/RIGHT volume  \u2022  YELLOW mute  \u2022  RED back"))
+            _("OK info  \u2022  LEFT/RIGHT volume  \u2022  YELLOW mute  \u2022  UP/BACK back"))
         self.update_clock()
         self.update_volume()
+        self._start_info_timer()
 
     def _set_visible(self, name, visible):
         widget = self.get(name)
@@ -117,6 +123,42 @@ class LivePlayerScreen(Screen):
         if visible:
             self.update_clock()
             self.update_volume()
+            self._start_info_timer()
+        else:
+            self._stop_info_timer()
+
+    def _start_info_timer(self):
+        if self._info_timer is None:
+            try:
+                self._info_timer = eTimer()
+                self._info_timer.callback.append(self._hide_info)
+            except Exception:
+                self._info_timer = None
+        if self._info_timer is None:
+            return
+        try:
+            self._info_timer.stop()
+            # Single-shot: the bar is shown again by OK or by the volume keys.
+            self._info_timer.start(INFO_BAR_TIMEOUT, True)
+        except Exception:
+            pass
+
+    def _stop_info_timer(self):
+        if self._info_timer is not None:
+            try:
+                self._info_timer.stop()
+            except Exception:
+                pass
+            self._info_timer = None
+
+    def _hide_info(self):
+        self._set_info_visible(False)
+
+    def key_up(self):
+        self.close()
+
+    def key_back(self):
+        self.close()
 
     def toggle_info(self):
         self._set_info_visible(not self._info_visible)
@@ -144,6 +186,10 @@ class LivePlayerScreen(Screen):
             except Exception:
                 pass
             self._clock_timer = None
+
+    def _stop_timers(self):
+        self._stop_clock()
+        self._stop_info_timer()
 
     def _tick(self):
         self.update_clock()
