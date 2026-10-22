@@ -159,6 +159,15 @@ class MagClient(object):
             "Connection": "Keep-Alive",
         }
 
+    def stream_headers(self):
+        """Headers some portals require for the media URL itself."""
+        root = self.portal or ""
+        return {
+            "User-Agent": MAG_UA,
+            "Referer": root + "/c/",
+            "Cookie": self._cookie(),
+        }
+
     # ------------------------------------------------------------- request
     def _request(self, params, endpoint=None):
         params = dict(params)

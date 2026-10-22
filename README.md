@@ -46,7 +46,7 @@ sh /tmp/iptvpro.sh
 
 ```sh
 sh /tmp/iptvpro.sh --no-restart      # تثبيت بدون إعادة تشغيل
-sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk
+sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.5_all.ipk
 ```
 
 إذا نسخت `install.sh` وملف `ipk` إلى نفس المجلد على الرسيفر، فسيستخدم السكريبت الملف المحلي دون تنزيل.
@@ -54,12 +54,12 @@ sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.
 ### عبر ملف ipk
 
 1. حمّل الملف من مجلد `dist`:
-   `enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk`
+   `enigma2-plugin-extensions-iptvplayerpro_1.1.5_all.ipk`
 2. انسخه إلى الجهاز، مثلًا إلى `/tmp` عبر FTP/SFTP.
 3. من Telnet/SSH نفّذ:
 
 ```sh
-opkg install /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk
+opkg install /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.5_all.ipk
 ```
 
 4. أعد تشغيل الواجهة:
@@ -75,7 +75,7 @@ init 3
 بعد التثبيت يظهر البلوجين في: **Menu → Plugins** وفي قائمة الإضافات.
 
 > إذا رفض `opkg` التثبيت بسبب الاعتماديات، استخدم:
-> `opkg install --force-depends /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk`
+> `opkg install --force-depends /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.5_all.ipk`
 
 ## الإعداد الأول
 
@@ -215,7 +215,7 @@ python build_ipk.py
 سيتم إنشاء الملف في:
 
 ```
-dist/enigma2-plugin-extensions-iptvplayerpro_1.1.4_all.ipk
+dist/enigma2-plugin-extensions-iptvplayerpro_1.1.5_all.ipk
 ```
 
 ### الاختبارات

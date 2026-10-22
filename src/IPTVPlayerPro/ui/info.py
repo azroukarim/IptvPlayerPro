@@ -125,8 +125,13 @@ class InfoScreen(AsyncScreen):
 
     def _play(self, url):
         try:
+            user_agent, options = self.backend.stream_options(self.item)
+        except Exception:
+            user_agent = to_text(self.item.get("ua") or self.item.get("stream_ua"))
+            options = to_text(self.item.get("opts") or self.item.get("stream_opts"))
+        try:
             play_url(self.session, url, safe_int(self.store.settings.get("service_type"), 4097),
-                     self.item.get("name"))
+                     self.item.get("name"), user_agent, options)
         except Exception as error:  # noqa: BLE001
             self["hint"].setText(_("OK play  •  BACK close"))
             self.show_error(error)

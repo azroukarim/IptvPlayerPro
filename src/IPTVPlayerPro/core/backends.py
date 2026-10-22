@@ -81,6 +81,16 @@ class BaseBackend(object):
     def resolve(self, item):
         raise NotImplementedError
 
+    def stream_options(self, item):
+        """Return ``(user_agent, extra_options)`` for the player.
+
+        M3U entries carry their own ``#EXTVLCOPT`` values; the source level UA
+        is used as a fallback for providers that protect both the playlist and
+        the streams with the same agent.
+        """
+        return (to_text(item.get("ua") or self.source.get("ua")),
+                to_text(item.get("opts")))
+
     def account(self):
         info = self.source.get("info") or {}
         return {
@@ -612,6 +622,33 @@ class MagBackend(BaseBackend):
         return items, total
 
     # ------------------------------------------------------------ playback
+    def _remember_stream_options(self, item, client):
+        """Keep the portal headers needed by the stream URL.
+
+        The media request is made by Enigma2, not by the HTTP client used for
+        the API, so the User-Agent/Cookie/Referer must travel in the service
+        reference.  They are attached to the selected item after create_link()
+        and read by stream_options() when the player starts.
+        """
+        try:
+            headers = client.stream_headers()
+        except Exception:
+            return
+        agent = u""
+        extra = []
+        for key, value in headers.items():
+            if key.lower() == "user-agent":
+                agent = to_text(value)
+            else:
+                extra.append(u"{0}={1}".format(to_text(key), to_text(value)))
+        item["stream_ua"] = agent
+        item["stream_opts"] = u"&".join(extra)
+
+    def stream_options(self, item):
+        if item.get("stream_opts") or item.get("stream_ua"):
+            return to_text(item.get("stream_ua")), to_text(item.get("stream_opts"))
+        return BaseBackend.stream_options(self, item)
+
     def resolve(self, item):
         cmd = to_text(item.get("cmd") or "").strip()
         raw = item.get("raw") or {}
@@ -627,11 +664,13 @@ class MagBackend(BaseBackend):
         if kind == "episode":
             series_id = safe_int(item.get("series_id") or raw.get("movie_id") or raw.get("series_id"), 0)
         try:
-            return client.create_link(kind, cmd, series=series_id)
+            url = client.create_link(kind, cmd, series=series_id)
         except MagError:
-            if series_id:
-                return client.create_link(kind, cmd, series=0)
-            raise
+            if not series_id:
+                raise
+            url = client.create_link(kind, cmd, series=0)
+        self._remember_stream_options(item, client)
+        return url
 
     def favorite_key(self, item):
         return item.get("fav_key") or "mag:" + md5_key(item)

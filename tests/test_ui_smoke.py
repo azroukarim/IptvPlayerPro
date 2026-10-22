@@ -552,6 +552,14 @@ def main():
                 return self.current
 
         play_url(PlayingSession(), "http://example.test/live.ts")
+
+        header_session = PlayingSession()
+        play_url(header_session, "http://example.test/live.ts", item_ua="VLC/3.0",
+                 item_opts="Referer=http://portal.example/c/")
+        header_reference = header_session.current.toString()
+        assert "User-Agent=VLC/3.0" in header_reference
+        assert "Referer=http://portal.example/c/" in header_reference
+
         backend = None
         screens = [
             LiveCategoriesScreen(session, store, backend),

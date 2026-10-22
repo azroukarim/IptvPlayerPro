@@ -25,6 +25,7 @@ from IPTVPlayerPro.core.i18n import set_language  # noqa: E402
 from IPTVPlayerPro.core.mag import MagClient, normalize_mac, normalize_portal  # noqa: E402
 from IPTVPlayerPro.core.store import Store  # noqa: E402
 from IPTVPlayerPro.core.backends import M3UBackend, MagBackend, source_summary  # noqa: E402
+from IPTVPlayerPro.core.util import stream_url_with_headers  # noqa: E402
 
 PLAYLIST = u"""#EXTM3U
 #EXTINF:-1 tvg-id="news1" tvg-logo="http://img/logos/news.png" group-title="News",News One HD
@@ -140,6 +141,27 @@ def test_playlist():
     movie = [item for item in catalogue["vod"] if "Inception" in item["name"]][0]
     check(movie["year"] == "2010", "movie year detected")
 
+    option_items = parse_playlist(u"""#EXTM3U
+#EXTINF:-1 group-title="News",Header Channel
+#EXTVLCOPT:http-user-agent=LineAgent
+#EXTVLCOPT:http-referrer=http://portal.example/c/
+http://stream.example.com/live/header.ts|User-Agent=UrlAgent&Origin=http://portal.example
+""")
+    option_item = option_items[0]
+    check(option_item["ua"] == "LineAgent", "EXTVLCOPT agent on entry")
+    check("http-referrer=" in option_item["opts"] and "User-Agent=UrlAgent" in option_item["opts"],
+          "EXTVLCOPT and URL options combined")
+
+    headed = stream_url_with_headers(
+        option_item["url"], option_item["ua"], option_item["opts"])
+    check(headed.count("User-Agent=") == 1, "user agent is not duplicated")
+    check("#Referer=http://portal.example/c/" in headed, "referrer header added")
+    check("#" in headed and "Origin=http://portal.example" in headed, "origin header kept")
+    check(stream_url_with_headers("udp://239.0.0.1:1234", "Agent"),
+          "non-HTTP URL is not corrupted")
+    check(not stream_url_with_headers("udp://239.0.0.1:1234", "Agent").endswith("#User-Agent=Agent"),
+          "headers are only applied to HTTP/RTSP URLs")
+
 
 def test_store(tmp):
     print("[store]")
@@ -235,6 +257,9 @@ def test_mag(tmp):
     episodes, _t = backend.episodes("200", "1")
     check(len(episodes) == 2, "backend episodes")
     check(backend.resolve(episodes[0]) == "http://portal/stream/play.m3u8", "resolve episode")
+    mag_ua, mag_opts = backend.stream_options(episodes[0])
+    check("MAG" in mag_ua, "MAG stream user agent")
+    check("Cookie=" in mag_opts and "Referer=" in mag_opts, "MAG stream headers kept")
     check(store.get_source(source["id"])["info"]["expires"] == "2027-01-01 00:00:00", "expiry stored")
     mac_path = os.path.join(magconf, "mac.txt")
     check(os.path.exists(mac_path), "mac text file written")

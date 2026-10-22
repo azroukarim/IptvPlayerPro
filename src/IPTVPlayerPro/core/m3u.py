@@ -94,6 +94,7 @@ def parse_playlist(text, base_url=""):
     current = None
     pending_group = ""
     pending_ua = ""
+    pending_opts = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -114,8 +115,10 @@ def parse_playlist(text, base_url=""):
                 "logo": to_text(logo).strip(),
                 "duration": duration,
                 "ua": pending_ua,
+                "opts": "&".join(pending_opts),
             }
             pending_ua = ""
+            pending_opts = []
             continue
         if line.startswith("#EXTGRP:"):
             pending_group = line[len("#EXTGRP:"):].strip()
@@ -124,21 +127,33 @@ def parse_playlist(text, base_url=""):
             continue
         if line.startswith("#EXTVLCOPT:"):
             option = line[len("#EXTVLCOPT:"):].strip()
-            if option.lower().startswith("http-user-agent="):
+            low = option.lower()
+            if low.startswith("http-user-agent="):
                 pending_ua = option.split("=", 1)[1].strip()
                 if current is not None:
                     current["ua"] = pending_ua
+            elif low.startswith(("http-referrer=", "http-referer=",
+                                 "http-origin=", "http-cookie=")):
+                pending_opts.append(option)
+                if current is not None:
+                    existing = to_text(current.get("opts"))
+                    current["opts"] = "&".join(
+                        [part for part in (existing, option) if part])
             continue
         if line.startswith("#"):
             continue
         if current is None:
             # URL without EXTINF: still show it, the provider knows why.
-            current = {"name": line.split("/")[-1][:80], "attrs": {}, "group": pending_group, "logo": "", "duration": "", "ua": pending_ua}
+            current = {"name": line.split("/")[-1][:80], "attrs": {},
+                       "group": pending_group, "logo": "", "duration": "",
+                       "ua": pending_ua, "opts": "&".join(pending_opts)}
         url = line
         options = ""
         if "|" in url:
             url, options = url.split("|", 1)
         url = url.strip()
+        option_text = "&".join(
+            [part for part in (to_text(current.get("opts")), options.strip()) if part])
         if not url:
             current = None
             continue
@@ -158,7 +173,7 @@ def parse_playlist(text, base_url=""):
             "group": group or _default_group(kind),
             "kind": kind,
             "ua": current.get("ua") or "",
-            "opts": options,
+            "opts": option_text,
             "duration": current.get("duration") or "",
             "tvg_id": (current.get("attrs") or {}).get("tvg-id") or "",
         }
@@ -170,6 +185,8 @@ def parse_playlist(text, base_url=""):
         item["id"] = short_hash(kind + "|" + (item.get("tvg_id") or "") + "|" + url, 14)
         items.append(item)
         current = None
+        pending_ua = ""
+        pending_opts = []
     return items
 
 

@@ -29,7 +29,7 @@ from Tools.LoadPixmap import LoadPixmap
 
 from ..core.i18n import _
 from ..core.net import Http, NetError
-from ..core.util import md5, safe_int, to_text
+from ..core.util import md5, safe_int, stream_url_with_headers, to_text
 
 PLUGIN_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGE_PATH = os.path.join(PLUGIN_PATH, "images")
@@ -588,14 +588,19 @@ def download_poster(url, store, timeout=15):
     return _download()
 
 
-def play_url(session, url, service_type=4097, name=u"", item_ua=None):
-    url = to_text(url).strip()
+def play_url(session, url, service_type=4097, name=u"", item_ua=None, item_opts=None):
+    url = stream_url_with_headers(url, item_ua, item_opts)
     if not url:
         raise NetError(_("This stream is not playable"))
+    # Keep header values (which are part of the service reference syntax)
+    # untouched; only quote the actual stream URL.
+    base, separator, headers = url.partition("#")
     try:
-        safe_url = quote(url, safe="%:/?&=#+,;@!$'()*[]~-._")
+        safe_url = quote(base, safe="%:/?&=+,;@!$'()*[]~-._")
     except Exception:
-        safe_url = url.replace(" ", "%20")
+        safe_url = base.replace(" ", "%20")
+    if separator:
+        safe_url = u"{0}#{1}".format(safe_url, headers)
     reference = u"{0}:0:1:0:0:0:0:0:0:0:{1}".format(int(service_type), safe_url)
     service = eServiceReference(reference)
     if name:

@@ -89,6 +89,76 @@ def human_count(value):
         return str(value)
 
 
+# Stream URLs from M3U files and MAG portals often need an HTTP user agent,
+# referrer or cookie.  Enigma2's service reference accepts those values after
+# a ``#`` and separates them with ``&`` (for example
+# ``http://host/live.ts#User-Agent=VLC/3.0&Referer=http://host/``).
+_HEADER_ALIASES = {
+    "http-user-agent": "User-Agent",
+    "user-agent": "User-Agent",
+    "useragent": "User-Agent",
+    "http-referrer": "Referer",
+    "http-referer": "Referer",
+    "referer": "Referer",
+    "referrer": "Referer",
+    "http-origin": "Origin",
+    "origin": "Origin",
+    "cookie": "Cookie",
+    "http-cookie": "Cookie",
+}
+
+
+def _stream_header_parts(value):
+    """Split ``Key=Value&Key=Value`` (or VLC ``|`` options) into pairs."""
+    text = to_text(value).strip()
+    if text.startswith("|"):
+        text = text[1:]
+    pairs = []
+    for chunk in re.split(r"[&|]", text):
+        chunk = chunk.strip()
+        if not chunk or "=" not in chunk:
+            continue
+        key, val = chunk.split("=", 1)
+        key = to_text(key).strip()
+        val = to_text(val).replace("\r", " ").replace("\n", " ").strip()
+        if not key or not val:
+            continue
+        low = key.lower()
+        if low in _HEADER_ALIASES:
+            key = _HEADER_ALIASES[low]
+        elif low.startswith("http-"):
+            # Unknown VLC-specific options are not valid HTTP headers.
+            continue
+        pairs.append((key, val))
+    return pairs
+
+
+def stream_url_with_headers(url, user_agent=u"", options=u""):
+    """Return *url* with Enigma2 stream headers appended when needed.
+
+    The service reference parser only understands headers for HTTP/HTTPS/RTSP
+    URLs; other protocols are returned unchanged.  Existing headers are kept
+    and a playlist value never replaces an explicitly supplied user agent.
+    """
+    url = to_text(url).strip()
+    if not url or not re.match(r"(?i)^(?:https?|rtsp)://", url):
+        return url
+    base, separator, fragment = url.partition("#")
+    headers = _stream_header_parts(fragment)
+    seen = set([key.lower() for key, _value in headers])
+    for key, value in _stream_header_parts(options):
+        if key.lower() not in seen:
+            headers.append((key, value))
+            seen.add(key.lower())
+    agent = to_text(user_agent).replace("\r", " ").replace("\n", " ").strip()
+    if agent and "user-agent" not in seen:
+        headers.append(("User-Agent", agent))
+    if not headers:
+        return url
+    encoded = "&".join([u"{0}={1}".format(key, value) for key, value in headers])
+    return u"{0}#{1}".format(base, encoded)
+
+
 def human_age(timestamp):
     timestamp = safe_int(timestamp)
     if timestamp <= 0:

@@ -3,7 +3,6 @@
 
 from __future__ import absolute_import
 
-import gc
 import os
 
 from Components.ActionMap import HelpableActionMap
@@ -93,19 +92,22 @@ class BackendScreen(ListScreen):
 
     def _play(self, url, item):
         self.status_text(u"")
+        user_agent, options = self.stream_options(item)
         try:
-            play_url(self.session, url, safe_int(self.store.settings.get("service_type"), 4097), item.get("name"))
+            play_url(self.session, url, safe_int(self.store.settings.get("service_type"), 4097),
+                     item.get("name"), user_agent, options)
         except Exception as error:  # noqa: BLE001
             self.show_error(error)
             return
         if self.store.settings.get("close_after_zap", True):
-            release = getattr(self, "release_channel_rows", None)
-            if release is not None:
-                try:
-                    release()
-                except Exception:
-                    pass
             self.close("zapped")
+
+    def stream_options(self, item):
+        try:
+            return self.backend.stream_options(item)
+        except Exception:
+            return (to_text(item.get("ua") or item.get("stream_ua")),
+                    to_text(item.get("opts") or item.get("stream_opts")))
 
     def _play_failed(self, error):
         self.status_text(u"")
@@ -331,6 +333,10 @@ class LiveBrowserScreen(BackendScreen):
 
         self.onLayoutFinish.append(self._layout_ready)
         self.onShown.append(self.shown_ready)
+        # Clear the page rows while the screen is being destroyed: doing this
+        # immediately after playService() can disturb the freshly started
+        # service on some images.
+        self.onClose.append(self.release_channel_rows)
 
     # -------------------------------------------------------------- layout
     def _layout_ready(self):
@@ -586,10 +592,6 @@ class LiveBrowserScreen(BackendScreen):
             pass
         try:
             self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
-        except Exception:
-            pass
-        try:
-            gc.collect()
         except Exception:
             pass
 
