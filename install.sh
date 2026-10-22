@@ -16,7 +16,7 @@
 #    --ipk FILE       install a local .ipk file
 # ============================================================
 
-VERSION="1.1.6"
+VERSION="1.1.7"
 PKG_NAME="enigma2-plugin-extensions-iptvplayerpro"
 PKG="${PKG_NAME}_${VERSION}_all.ipk"
 BASE_RAW="https://raw.githubusercontent.com/azroukarim/IptvPlayerPro/main/dist"

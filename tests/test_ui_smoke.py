@@ -80,6 +80,31 @@ class Font(object):
         self.size = size
 
 
+class Rect(object):
+    def __init__(self, left=0, top=0, width=0, height=0):
+        self._left = left
+        self._top = top
+        self._width = width
+        self._height = height
+
+    def left(self):
+        return self._left
+
+    def top(self):
+        return self._top
+
+    def width(self):
+        return self._width
+
+    def height(self):
+        return self._height
+
+
+class Desktop(object):
+    def size(self):
+        return Rect(0, 0, 1280, 720)
+
+
 def _build_enigma():
     module = types.ModuleType("enigma")
     module.RT_HALIGN_CENTER = 2
@@ -89,7 +114,9 @@ def _build_enigma():
     module.eListboxPythonMultiContent = object
     module.eTimer = Timer
     module.ePicLoad = PicLoad
+    module.eRect = Rect
     module.eServiceReference = ServiceReference
+    module.getDesktop = lambda index=0: Desktop()
     module.gFont = Font
     return {"enigma": module}
 
@@ -218,8 +245,57 @@ def _build_components():
     class Pixmap(object):
         def __init__(self):
             self.instance = PixmapInstance()
+            self.visible = True
+
+        def show(self):
+            self.visible = True
+
+        def hide(self):
+            self.visible = False
 
     pixmap.Pixmap = Pixmap
+
+    video_window = types.ModuleType("Components.VideoWindow")
+
+    class VideoWindowInstance(object):
+        def __init__(self):
+            self.position = None
+            self.fullscreen_position = None
+            self.restored = False
+            self.visible = True
+
+        def setPosition(self, index, left, top, width, height):
+            self.position = (index, left, top, width, height)
+
+        def setFullScreenPosition(self, rect):
+            self.fullscreen_position = (rect.left(), rect.top(), rect.width(), rect.height())
+
+        def restoreFullsize(self):
+            self.restored = True
+
+        def show(self):
+            self.visible = True
+
+        def hide(self):
+            self.visible = False
+
+    class VideoWindow(object):
+        def __init__(self, decoder=1, fb_width=720, fb_height=576):
+            self.decoder = decoder
+            self.fb_width = fb_width
+            self.fb_height = fb_height
+            self.instance = VideoWindowInstance()
+            self.visible = True
+
+        def show(self):
+            self.visible = True
+            self.instance.show()
+
+        def hide(self):
+            self.visible = False
+            self.instance.hide()
+
+    video_window.VideoWindow = VideoWindow
 
     scroll = types.ModuleType("Components.ScrollLabel")
 
@@ -255,6 +331,7 @@ def _build_components():
         "Components.MultiContent": multi,
         "Components.Pixmap": pixmap,
         "Components.ScrollLabel": scroll,
+        "Components.VideoWindow": video_window,
     }
     return modules
 
@@ -389,6 +466,7 @@ def main():
     work = tempfile.mkdtemp(prefix="iptvpro-ui-")
     try:
         from IPTVPlayerPro.core.store import Store
+        from IPTVPlayerPro.ui import browse as browse_module
         from IPTVPlayerPro.ui import menu as menu_module
         from IPTVPlayerPro.ui.account import AccountScreen
         from IPTVPlayerPro.ui.browse import (EpisodesScreen, LiveBrowserScreen,
@@ -502,15 +580,58 @@ def main():
         assert len(paged["channels"].l.items) == 125
         assert not paged.selected_is_more()
 
+        # Live TV playback must stay in the browser and move the main video
+        # plane into the preview pane.  It must also ignore close_after_zap.
+        live.set_focus("channels")
+        live["channels"].setCurrentIndex(0)
+        calls = []
+        original_play_url = browse_module.play_url
+
+        def fake_play_url(*args, **kwargs):
+            calls.append((args, kwargs))
+
+        browse_module.play_url = fake_play_url
+        try:
+            live._play("http://example.test/one", live.selected_channel())
+        finally:
+            browse_module.play_url = original_play_url
+        assert calls
+        assert live._preview_active is True
+        assert live["preview"].visible is False
+        assert live["previewVideo"].visible is True
+        assert not hasattr(live, "closed")
+        live.stop_preview()
+        assert live._preview_active is False
+        assert live["preview"].visible is True
+        assert live["previewVideo"].visible is False
+        assert live["previewVideo"].instance.fullscreen_position == (0, 0, 720, 576)
+
+        from IPTVPlayerPro.core.net import NetError
+
+        def failing_play_url(*args, **kwargs):
+            raise NetError("mini TV failed")
+
+        browse_module.play_url = failing_play_url
+        try:
+            live._play("http://example.test/two", live.selected_channel())
+        finally:
+            browse_module.play_url = original_play_url
+        assert live._preview_active is False
+        assert live["preview"].visible is True
+        assert live["previewVideo"].visible is False
+        assert not hasattr(live, "closed")
+        assert session.opened
+        live.doClose()
+        assert live._preview_active is False
+
         import xml.etree.ElementTree as ET
         from IPTVPlayerPro.ui.skins import LIVE_SKIN
         skin_names = set(widget.get("name") for widget in ET.fromstring(LIVE_SKIN).findall("widget"))
         for name in ("bg", "header", "categories", "channels", "previewLogo",
-                     "previewName", "playBg", "favBg", "hint"):
+                     "previewName", "previewVideo", "playBg", "favBg", "hint"):
             assert name in skin_names, name
 
         from IPTVPlayerPro.ui.base import play_url
-        from IPTVPlayerPro.core.net import NetError
 
         class FailingPlaySession(Session):
             def playService(self, service):

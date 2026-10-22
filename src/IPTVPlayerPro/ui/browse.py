@@ -5,9 +5,12 @@ from __future__ import absolute_import
 
 import os
 
+from enigma import eRect, eTimer
+
 from Components.ActionMap import HelpableActionMap
 from Components.Label import Label
 from Components.Pixmap import Pixmap
+from Components.VideoWindow import VideoWindow
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 
 from ..core.backends import source_label
@@ -24,6 +27,11 @@ from .skins import LIVE_SKIN
 # the 32-bit Python process.  Keep real logos only around the selected row; the
 # rest of the list uses the small built-in placeholder.
 LIVE_ICON_RADIUS = 12
+
+# The preview rectangle in the 1280x720 skin.  The matching skin widget owns
+# the actual hardware video window; this constant documents the geometry used
+# by the background images as well.
+LIVE_VIDEO_RECT = (744, 104, 512, 300)
 
 
 class BackendScreen(ListScreen):
@@ -280,6 +288,8 @@ class LiveBrowserScreen(BackendScreen):
         self._row_offset = 0
         self._icon_start = 0
         self._icon_end = 0
+        self._preview_active = False
+        self._preview_timer = None
 
         self["bg"] = Pixmap()
         self["header"] = Pixmap()
@@ -299,6 +309,12 @@ class LiveBrowserScreen(BackendScreen):
         self["chHeader"] = Label()
         self["channels"] = LiveList(52)
         self["preview"] = Pixmap()
+        # decoder=0 is the main video decoder.  The widget only moves the live
+        # video plane into the right-hand preview rectangle; it does not start
+        # a second stream or a second decoder.  It is hidden until the user
+        # selects a channel so the current TV service stays untouched while
+        # browsing.
+        self["previewVideo"] = VideoWindow(decoder=0, fb_width=1280, fb_height=720)
         self["previewKind"] = Label()
         self["previewLogo"] = Pixmap()
         self["previewName"] = Label()
@@ -333,6 +349,10 @@ class LiveBrowserScreen(BackendScreen):
 
         self.onLayoutFinish.append(self._layout_ready)
         self.onShown.append(self.shown_ready)
+        # Restore the main video plane before the screen and its video widget
+        # are destroyed, otherwise some Broadcom images leave the selected
+        # service in the small preview rectangle.
+        self.onClose.append(self.stop_preview)
         # Clear the page rows while the screen is being destroyed: doing this
         # immediately after playService() can disturb the freshly started
         # service on some images.
@@ -355,7 +375,7 @@ class LiveBrowserScreen(BackendScreen):
         self["navMovies"].setText(_("Movies"))
         self["navSeries"].setText(_("Series"))
         self["searchText"].setText(u"GREEN  " + _("Search channels"))
-        self["hint"].setText(_("OK play  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
+        self["hint"].setText(_("OK mini TV  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
         self["playLabel"].setText(u"OK  " + _("Play"))
         self["previewKind"].setText(_("CHANNEL PREVIEW"))
         self["previewName"].setText(_("Live TV"))
@@ -378,6 +398,105 @@ class LiveBrowserScreen(BackendScreen):
         self.update_headers()
         self.apply_focus()
         self.update_preview()
+        # The video widget is part of the widget tree but must stay inactive
+        # until a channel is explicitly played in the mini TV.
+        self._restore_fullscreen_video()
+
+    # ---------------------------------------------------------- mini TV
+    def _video_instance(self):
+        widget = self.get("previewVideo")
+        return getattr(widget, "instance", None) if widget is not None else None
+
+    def _set_visible(self, name, visible):
+        widget = self.get(name)
+        if widget is None:
+            return
+        try:
+            if visible:
+                widget.show()
+            else:
+                widget.hide()
+        except Exception:
+            pass
+
+    def _refresh_preview_video(self):
+        """Reapply the widget's skin rectangle to the hardware video plane.
+
+        eVideoWidget::setPosition() is protected in the C++ API, so showing
+        the widget is the supported way to make it write its destination.
+        The hide/show pair also cancels the delayed full-size restore that a
+        hide schedules.
+        """
+        widget = self.get("previewVideo")
+        if widget is None:
+            return
+        try:
+            widget.hide()
+            widget.show()
+        except Exception:
+            pass
+
+    def _restore_fullscreen_video(self):
+        widget = self.get("previewVideo")
+        instance = self._video_instance()
+        if instance is not None:
+            # setFullScreenPosition() writes the legacy 720x576 destination
+            # immediately and scales correctly on AML.  It also stores the
+            # position used by the widget's delayed restore timer.
+            aml = os.path.exists("/sys/class/video/axis")
+            full = eRect(0, 0, 1280, 720) if aml else eRect(0, 0, 720, 576)
+            try:
+                instance.setFullScreenPosition(full)
+            except Exception:
+                pass
+            try:
+                instance.restoreFullsize()
+            except Exception:
+                pass
+        if widget is not None:
+            try:
+                widget.hide()
+            except Exception:
+                pass
+
+    def _show_preview_video(self):
+        self._preview_active = True
+        self._set_visible("preview", False)
+        self._set_visible("previewLogo", False)
+        self._set_visible("previewKind", False)
+        self._set_visible("previewVideo", True)
+        self._refresh_preview_video()
+        if self._preview_timer is None:
+            try:
+                self._preview_timer = eTimer()
+                self._preview_timer.callback.append(self._reapply_preview)
+            except Exception:
+                self._preview_timer = None
+        if self._preview_timer is not None:
+            try:
+                # Some service handlers reset the video destination while the
+                # new stream starts.  Re-apply the rectangle afterwards.
+                self._preview_timer.start(600, True)
+            except Exception:
+                pass
+
+    def _reapply_preview(self):
+        if self._preview_active:
+            self._refresh_preview_video()
+
+    def stop_preview(self):
+        self._preview_active = False
+        if self._preview_timer is not None:
+            try:
+                self._preview_timer.stop()
+            except Exception:
+                pass
+            self._preview_timer = None
+        self._restore_fullscreen_video()
+        self._set_visible("previewVideo", False)
+        self._set_visible("preview", True)
+        self._set_visible("previewLogo", True)
+        self._set_visible("previewKind", True)
 
     # --------------------------------------------------------------- data
     def build(self):
@@ -614,6 +733,29 @@ class LiveBrowserScreen(BackendScreen):
                 except Exception:
                     pass
         return pixmap("channel.png")
+
+    def _play(self, url, item):
+        """Play a Live TV channel in the right-hand mini TV pane.
+
+        The old two-screen flow closed the list after a successful zap.  The
+        three-column browser must stay open so the user can keep browsing
+        while the channel is visible in the preview pane.  Movies and series
+        retain their normal full-screen playback behaviour.
+        """
+        self.status_text(u"")
+        user_agent, options = self.stream_options(item)
+        try:
+            play_url(self.session, url,
+                     safe_int(self.store.settings.get("service_type"), 4097),
+                     item.get("name"), user_agent, options)
+        except Exception as error:  # noqa: BLE001
+            # A failed stream must never close the plugin.  Restore the
+            # placeholder and leave the browser usable.
+            self.stop_preview()
+            self.show_error(error)
+            return
+        self._show_preview_video()
+        self.status_text(_("Playing in mini TV"))
 
     def refresh_icon_window(self):
         """Load logos only for a small window around the selected channel."""

@@ -10,11 +10,27 @@ from PIL import Image, ImageDraw, ImageFilter
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "src", "IPTVPlayerPro", "images")
 
+# The Live TV mini TV is drawn by Enigma2's video plane, not by the OSD.
+# Cut a transparent hole in the background and in the right panel so the
+# video is visible through the 512x300 preview rectangle.  The coordinates
+# are (left, top, right, bottom).
+VIDEO_BOX = (744, 104, 1256, 404)
+RIGHT_PANEL_VIDEO_BOX = (24, 24, 536, 324)
+
 
 def save(image, name):
     path = os.path.join(OUT, name)
     image.save(path, "PNG")
     print("  ", name, image.size)
+
+
+def clear_box(image, box):
+    """Set the alpha channel to zero without changing the RGB colours."""
+    pixels = image.load()
+    for y in range(box[1], box[3]):
+        for x in range(box[0], box[2]):
+            red, green, blue, _alpha = pixels[x, y]
+            pixels[x, y] = (red, green, blue, 0)
 
 
 def vertical_gradient(size, top, bottom):
@@ -57,6 +73,7 @@ def make_background():
     dark = Image.new("RGBA", (1280, 720), (0, 0, 0, 255))
     mask = vignette.point(lambda value: int(value * 0.32))
     image = Image.composite(dark, image, mask)
+    clear_box(image, VIDEO_BOX)
     save(image, "live_bg.png")
 
 
@@ -73,8 +90,9 @@ def make_panels():
          "live_panel_left.png")
     save(rounded_panel((420, 640), (15, 17, 43, 224), (54, 57, 103, 255), 0, 0),
          "live_panel_mid.png")
-    save(rounded_panel((560, 640), (12, 14, 38, 232), (54, 57, 103, 255), 0, 0),
-         "live_panel_right.png")
+    right_panel = rounded_panel((560, 640), (12, 14, 38, 232), (54, 57, 103, 255), 0, 0)
+    clear_box(right_panel, RIGHT_PANEL_VIDEO_BOX)
+    save(right_panel, "live_panel_right.png")
     save(rounded_panel((512, 300), (4, 5, 12, 245), (54, 57, 103, 255), 14, 2),
          "live_preview.png")
     save(rounded_panel((430, 42), (20, 23, 57, 235), (100, 98, 173, 255), 21, 2),
