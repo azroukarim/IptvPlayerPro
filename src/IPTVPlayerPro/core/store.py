@@ -18,7 +18,7 @@ from .util import (atomic_write, ensure_dir, md5, now, read_json, safe_int,
 _STORE_LOCK = threading.RLock()
 
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 CONFIG_CANDIDATES = [
     "/etc/enigma2/iptvplayerpro",
@@ -44,6 +44,7 @@ DEFAULT_SETTINGS = {
     "logos": True,
     "close_after_zap": True,
     "cache_hours": 12,
+    "prefetch_enabled": True,
     "web_enabled": True,
     "web_port": 8099,
     "web_pin": "",

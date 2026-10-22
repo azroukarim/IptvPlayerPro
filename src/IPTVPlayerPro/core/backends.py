@@ -18,8 +18,8 @@ from .mag import (MagClient, MagError, is_valid_mac, normalize_mac,
 from .m3u import (build_catalogue, favourite_key, is_adult_category,
                   parse_playlist)
 from .net import Http, NetError
-from .util import (clean_html, human_age, is_expired, now, safe_int,
-                   short_hash, to_text)
+from .util import (PrefetchCancelled, clean_html, human_age, is_expired, now,
+                   safe_int, short_hash, to_text)
 
 
 def _match(text, query):
@@ -30,6 +30,19 @@ def _match(text, query):
 
 def _sort_key(name):
     return to_text(name).lower()
+
+
+def _group_items(items, default_group):
+    """Build one list per group so category switches never rescan a catalogue."""
+    groups = {}
+    for item in items:
+        group = to_text(item.get("group") or default_group)
+        groups.setdefault(group, []).append(item)
+    return groups
+
+
+def _page_size(settings):
+    return max(50, min(1000, safe_int(settings.get("page_size"), 300)))
 
 
 class BaseBackend(object):
@@ -54,6 +67,14 @@ class BaseBackend(object):
 
     def refresh(self, force=False, progress=None):
         return False
+
+    def prefetch(self, progress=None, force=False):
+        """Prepare the complete catalogue in the background.
+
+        M3U already downloads the whole playlist in :meth:`refresh`; MAG
+        overrides this method to walk every VOD and series page.
+        """
+        return self.counts()
 
     def counts(self):
         return {}
@@ -108,6 +129,10 @@ class BaseBackend(object):
 
     def favorite_key(self, item):
         return item.get("fav_key") or ""
+
+    def favorite_keys(self):
+        """Return the favorite keys as a set for list rendering."""
+        return set(self.store.favorites(self.source_id))
 
     def toggle_favorite(self, item):
         return self.store.toggle_favorite(self.source_id, self.favorite_key(item))
@@ -177,6 +202,12 @@ class BaseBackend(object):
     def _category(self, cat_id, name, count=0):
         return {"id": to_text(cat_id), "name": name, "count": safe_int(count)}
 
+    def _page_slice(self, items, page):
+        size = _page_size(self.settings)
+        page = max(1, safe_int(page, 1))
+        start = (page - 1) * size
+        return items[start:start + size], len(items)
+
 
 class M3UBackend(BaseBackend):
     kind = "m3u"
@@ -187,6 +218,9 @@ class M3UBackend(BaseBackend):
         self.vod = []
         self.series = []
         self._series_index = {}
+        self._live_groups = {}
+        self._vod_groups = {}
+        self._series_groups = {}
         self.loaded = False
 
     # ------------------------------------------------------------- loading
@@ -243,6 +277,8 @@ class M3UBackend(BaseBackend):
             "epg_urls": epg_urls,
         })
         self._apply(catalogue)
+        if progress:
+            progress(_("Saving playlist ..."))
         self.store.save_cache(self.source_id, catalogue)
         if force:
             # Channel ids may have changed, so an old mapping cannot be trusted.
@@ -264,10 +300,27 @@ class M3UBackend(BaseBackend):
         self.vod = payload.get("vod") or []
         self.series = payload.get("series") or []
         self._epg_urls = payload.get("epg_urls") or []
+        # Old caches did not carry favourite keys.  Creating them once here is
+        # much cheaper than hashing every channel name and URL while a list is
+        # being rendered or filtered.
+        for item in self.live:
+            if not item.get("fav_key"):
+                item["fav_key"] = favourite_key(item)
+        for item in self.vod:
+            if not item.get("fav_key"):
+                item["fav_key"] = favourite_key(item)
+        self._live_groups = _group_items(self.live, "Live TV")
+        self._vod_groups = _group_items(self.vod, "Movies")
+        self._series_groups = _group_items(self.series, "Series")
         self._series_index = {}
         for entry in self.series:
             self._series_index[entry.get("id")] = entry
         self.loaded = True
+
+    def prefetch(self, progress=None, force=False):
+        if force or not self.loaded:
+            self.refresh(force=force, progress=progress)
+        return self.counts()
 
     def counts(self):
         return {
@@ -279,14 +332,7 @@ class M3UBackend(BaseBackend):
 
     # ---------------------------------------------------------------- live
     def live_categories(self):
-        groups = []
-        seen = set()
-        for item in self.live:
-            group = item.get("group") or "Live TV"
-            if group not in seen:
-                seen.add(group)
-                groups.append(group)
-        groups.sort(key=_sort_key)
+        groups = sorted(self._live_groups.keys(), key=_sort_key)
         categories = [
             self._category("all", _("All channels"), len(self.live)),
             self._category("fav", u"\u2605 " + _("Favorites"), self.favorites_count()),
@@ -294,25 +340,24 @@ class M3UBackend(BaseBackend):
         for group in groups:
             if self.hide_adult() and is_adult_category(group):
                 continue
-            count = len([item for item in self.live if (item.get("group") or "") == group])
+            count = len(self._live_groups.get(group) or [])
             categories.append(self._category("g:" + group, group, count))
         return categories
 
     def live_items(self, category_id, query=""):
         if category_id == "fav":
-            favorites = set(self.store.favorites(self.source_id))
+            favorites = self.favorite_keys()
             items = [item for item in self.live if self.favorite_key(item) in favorites]
         elif category_id.startswith("g:"):
-            group = category_id[2:]
-            items = [item for item in self.live if (item.get("group") or "") == group]
+            items = self._live_groups.get(category_id[2:]) or []
         else:
-            items = list(self.live)
+            items = self.live
         if query:
             items = [item for item in items if _match(item.get("name"), query)]
         return items
 
     def favorite_key(self, item):
-        return favourite_key(item)
+        return item.get("fav_key") or favourite_key(item)
 
     # ------------------------------------------------------------------ epg
     def epg_urls(self):
@@ -333,62 +378,40 @@ class M3UBackend(BaseBackend):
 
     # ----------------------------------------------------------------- vod
     def vod_categories(self):
-        groups = []
-        seen = set()
-        for item in self.vod:
-            group = item.get("group") or "Movies"
-            if group not in seen:
-                seen.add(group)
-                groups.append(group)
-        groups.sort(key=_sort_key)
+        groups = sorted(self._vod_groups.keys(), key=_sort_key)
         categories = [self._category("all", _("All"), len(self.vod))]
         for group in groups:
             if self.hide_adult() and is_adult_category(group):
                 continue
-            count = len([item for item in self.vod if (item.get("group") or "") == group])
+            count = len(self._vod_groups.get(group) or [])
             categories.append(self._category("g:" + group, group, count))
         return categories
 
-    def _page_slice(self, items, page):
-        size = max(50, min(1000, safe_int(self.settings.get("page_size"), 300)))
-        page = max(1, safe_int(page, 1))
-        start = (page - 1) * size
-        return items[start:start + size], len(items)
-
     def vod_items(self, category_id, query="", page=1):
         if category_id.startswith("g:"):
-            group = category_id[2:]
-            items = [item for item in self.vod if (item.get("group") or "") == group]
+            items = self._vod_groups.get(category_id[2:]) or []
         else:
-            items = list(self.vod)
+            items = self.vod
         if query:
             items = [item for item in items if _match(item.get("name"), query)]
         return self._page_slice(items, page)
 
     # -------------------------------------------------------------- series
     def series_categories(self):
-        groups = []
-        seen = set()
-        for entry in self.series:
-            group = entry.get("group") or "Series"
-            if group not in seen:
-                seen.add(group)
-                groups.append(group)
-        groups.sort(key=_sort_key)
+        groups = sorted(self._series_groups.keys(), key=_sort_key)
         categories = [self._category("all", _("All"), len(self.series))]
         for group in groups:
             if self.hide_adult() and is_adult_category(group):
                 continue
-            count = len([entry for entry in self.series if (entry.get("group") or "") == group])
+            count = len(self._series_groups.get(group) or [])
             categories.append(self._category("g:" + group, group, count))
         return categories
 
     def series_items(self, category_id, query="", page=1):
         if category_id.startswith("g:"):
-            group = category_id[2:]
-            items = [entry for entry in self.series if (entry.get("group") or "") == group]
+            items = self._series_groups.get(category_id[2:]) or []
         else:
-            items = list(self.series)
+            items = self.series
         if query:
             items = [item for item in items if _match(item.get("name"), query)]
         return self._page_slice(items, page)
@@ -397,18 +420,18 @@ class M3UBackend(BaseBackend):
         entry = self._series_index.get(series_id)
         if not entry:
             return []
-        seasons = []
+        counts = {}
         for episode in entry.get("episodes") or []:
             season = safe_int(episode.get("season"), 0)
-            if season not in [item["season"] for item in seasons]:
-                seasons.append({"season": season})
-        seasons.sort(key=lambda item: item["season"])
-        return [{
-            "id": str(item["season"]),
-            "name": (_("Season {0}").format(item["season"]) if item["season"] else _("All episodes")),
-            "count": len([episode for episode in entry.get("episodes") or []
-                          if safe_int(episode.get("season"), 0) == item["season"]]),
-        } for item in seasons]
+            counts[season] = counts.get(season, 0) + 1
+        seasons = []
+        for season in sorted(counts.keys()):
+            seasons.append({
+                "id": str(season),
+                "name": (_("Season {0}").format(season) if season else _("All episodes")),
+                "count": counts[season],
+            })
+        return seasons
 
     def episodes(self, series_id, season_id, page=1):
         entry = self._series_index.get(series_id)
@@ -447,9 +470,17 @@ class MagBackend(BaseBackend):
         self.genres_itv = []
         self.genres_vod = []
         self.channels = []
+        self.vod = []
+        self.series = []
+        self.vod_ready = False
+        self.series_ready = False
         self.loaded = False
+        self._cache_ts = 0
         self._vod_cache = {}
         self._series_cache = {}
+        self._live_groups = {}
+        self._vod_groups = {}
+        self._series_groups = {}
 
     # ------------------------------------------------------------- helpers
     def _make_client(self):
@@ -506,6 +537,17 @@ class MagBackend(BaseBackend):
                 "mac": client.mac,
             }
             self._apply(payload)
+            if progress:
+                progress(_("Saving portal data ..."))
+            # Store the compact channel rows rather than the large raw portal
+            # objects.  This keeps the cache smaller and makes list rendering
+            # independent from the portal's field names.
+            payload["channels"] = self.channels
+            payload["channels_compact"] = True
+            payload["vod"] = []
+            payload["series"] = []
+            payload["vod_ready"] = False
+            payload["series_ready"] = False
             self.store.save_cache(self.source_id, payload)
             if force:
                 self.store.clear_epg_cache(self.source_id)
@@ -515,7 +557,7 @@ class MagBackend(BaseBackend):
             status = "expired" if is_expired(expires) else ("active" if expires else "active")
             self.store.update_info(
                 self.source_id,
-                channels=len(channels),
+                channels=len(self.channels),
                 expires=expires,
                 status=status,
                 account_name=to_text(info.get("name") or ""),
@@ -532,16 +574,196 @@ class MagBackend(BaseBackend):
     def _apply(self, payload):
         self.genres_itv = payload.get("genres_itv") or []
         self.genres_vod = payload.get("genres_vod") or []
-        self.channels = payload.get("channels") or []
+        raw_channels = payload.get("channels") or []
+        if payload.get("channels_compact"):
+            self.channels = raw_channels
+        else:
+            self.channels = []
+            for raw in raw_channels:
+                group = to_text(raw.get("tv_genre_id") or raw.get("genre_id") or "")
+                self.channels.append(self._channel(raw, group, "live"))
+        self.vod = payload.get("vod") or []
+        self.series = payload.get("series") or []
+        self.vod_ready = bool(payload.get("vod_ready")) if "vod_ready" in payload else False
+        self.series_ready = bool(payload.get("series_ready")) if "series_ready" in payload else False
+        self._cache_ts = safe_int(payload.get("ts")) or now()
+        self._rebuild_indexes()
         self.loaded = True
+
+    def _rebuild_indexes(self):
+        self._live_groups = _group_items(self.channels, "")
+        self._vod_groups = _group_items(self.vod, "")
+        self._series_groups = _group_items(self.series, "")
 
     def counts(self):
         info = self.source.get("info") or {}
         return {
             "live": len(self.channels) or safe_int(info.get("channels")),
-            "vod": safe_int(info.get("vod")),
-            "series": safe_int(info.get("series")),
+            "vod": len(self.vod) if self.vod_ready else safe_int(info.get("vod")),
+            "series": len(self.series) if self.series_ready else safe_int(info.get("series")),
         }
+
+    def prefetch(self, progress=None, force=False):
+        """Fetch every live/VOD/series category into the persistent cache.
+
+        The live bouquet is already stored by :meth:`refresh`; this method
+        walks the portal's VOD and series pages once so every category opens
+        instantly afterwards, even when the box has no network at that moment.
+        """
+        if force or not self.loaded:
+            self.refresh(force=force, progress=progress)
+        if not self.loaded:
+            return self.counts()
+        try:
+            if force or not self.vod_ready:
+                self._prefetch_vod(progress)
+            if force or not self.series_ready:
+                self._prefetch_series(progress)
+        finally:
+            self._save_catalogue()
+        return self.counts()
+
+    def _prefetch_client(self, progress=None):
+        client = self._make_client()
+        if not client.token:
+            if progress:
+                progress(_("Connecting to the portal ..."))
+            client.auth()
+        return client
+
+    def _all_pages(self, fetch, genre, label=u"", progress=None):
+        rows = []
+        page = 1
+        total = 0
+        while page <= 500:
+            batch, reported = fetch(genre, page)
+            if not batch:
+                break
+            rows.extend(batch)
+            total = max(total, safe_int(reported))
+            if total and len(rows) >= total:
+                break
+            if progress:
+                progress(u"{0} {1}".format(label, len(rows)))
+            page += 1
+        return rows
+
+    def _prefetch_catalogue(self, client, kind, genres, progress=None):
+        if kind == "vod":
+            label = _("Preparing movies ...")
+            fetch = lambda genre, page: client.ordered_list("vod", genre, page)
+            build = lambda raw, genre: self._vod(raw, genre, "vod")
+            fallback_attr = ""
+        else:
+            label = _("Preparing series ...")
+            fetch = lambda genre, page: client.series_page(genre, page)
+            build = lambda raw, genre: self._vod(raw, genre, "series")
+            fallback_attr = "series_flag"
+        genre_list = []
+        for genre in genres or []:
+            if not isinstance(genre, dict) or not genre.get("id"):
+                continue
+            if (self.hide_adult() and
+                    (genre.get("censored") or is_adult_category(genre.get("name")))):
+                continue
+            genre_list.append(genre)
+        if not genre_list:
+            if genres:
+                # Every category was filtered as adult content.
+                return [], 1
+            genre_list = [{"id": "*", "name": _("All")}]
+        catalog = {}
+        ok_count = 0
+        last_error = None
+        for index, genre in enumerate(genre_list):
+            genre_id = to_text(genre.get("id"))
+            if progress:
+                progress(u"{0} {1}/{2}".format(label, index + 1, len(genre_list)))
+            try:
+                raws = self._all_pages(fetch, genre_id, label, progress)
+                ok_count += 1
+            except PrefetchCancelled:
+                raise
+            except Exception as error:  # one bad category must not abort all
+                last_error = error
+                continue
+            for raw in raws:
+                if not isinstance(raw, dict):
+                    continue
+                ident = to_text(raw.get("id") or raw.get("movie_id") or
+                                raw.get("series_id") or "")
+                if not ident:
+                    ident = short_hash(to_text(raw.get("name")) + "|" +
+                                       to_text(raw.get("cmd")), 12)
+                item = catalog.get(ident)
+                if item is None:
+                    item = build(raw, genre_id)
+                    item["groups"] = [genre_id]
+                    item["group"] = to_text(genre.get("name") or item.get("group"))
+                    catalog[ident] = item
+                elif genre_id not in item["groups"]:
+                    item["groups"].append(genre_id)
+        if not catalog and kind == "series" and fallback_attr:
+            # Portals that only expose series through the VOD endpoint still
+            # get a usable series list without another network pass.
+            for item in self.vod:
+                if not item.get(fallback_attr):
+                    continue
+                copy = dict(item)
+                copy["kind"] = "series"
+                copy["groups"] = list(item.get("groups") or [item.get("group") or ""])
+                catalog[item.get("id") or item.get("fav_key")] = copy
+        if not ok_count and not catalog:
+            raise last_error or MagError(_("The portal did not return any items."))
+        return list(catalog.values()), ok_count
+
+    def _prefetch_vod(self, progress=None):
+        client = self._prefetch_client(progress)
+        genres = self.genres_vod
+        if not genres:
+            genres = client.vod_categories()
+            self.genres_vod = genres
+        items, _ok = self._prefetch_catalogue(client, "vod", genres, progress)
+        self.vod = items
+        self.vod_ready = True
+        self._vod_groups = _group_items(self.vod, "")
+        self._vod_cache = {}
+
+    def _prefetch_series(self, progress=None):
+        client = self._prefetch_client(progress)
+        genres = self.genres_vod
+        items, _ok = self._prefetch_catalogue(client, "series", genres, progress)
+        if not items and not genres:
+            # No VOD categories and no dedicated series endpoint: derive a
+            # series catalogue from the prefetched VOD items flagged as such.
+            for item in self.vod:
+                if not item.get("series_flag"):
+                    continue
+                copy = dict(item)
+                copy["kind"] = "series"
+                copy["groups"] = list(item.get("groups") or [item.get("group") or ""])
+                items.append(copy)
+        self.series = items
+        self.series_ready = True
+        self._series_groups = _group_items(self.series, "")
+        self._series_cache = {}
+
+    def _save_catalogue(self):
+        payload = {
+            "kind": "mag",
+            "ts": self._cache_ts or now(),
+            "genres_itv": self.genres_itv,
+            "genres_vod": self.genres_vod,
+            "channels": self.channels,
+            "channels_compact": True,
+            "vod": self.vod,
+            "series": self.series,
+            "vod_ready": self.vod_ready,
+            "series_ready": self.series_ready,
+            "portal": self.source.get("url"),
+            "mac": self.source.get("mac"),
+        }
+        self.store.save_cache(self.source_id, payload)
 
     # ---------------------------------------------------------------- live
     def live_categories(self):
@@ -552,26 +774,25 @@ class MagBackend(BaseBackend):
         for genre in self.genres_itv:
             if self.hide_adult() and (genre.get("censored") or is_adult_category(genre.get("name"))):
                 continue
-            count = len([item for item in self.channels if to_text(item.get("tv_genre_id")) == genre["id"]])
-            categories.append(self._category("g:" + genre["id"], genre["name"], count))
+            count = len(self._live_groups.get(to_text(genre.get("id"))) or [])
+            categories.append(self._category("g:" + to_text(genre.get("id")), genre["name"], count))
         return categories
 
     def live_items(self, category_id, query=""):
-        items = []
-        for raw in self.channels:
-            group = to_text(raw.get("tv_genre_id") or raw.get("genre_id") or "")
-            kind = "live"
-            item = self._channel(raw, group, kind)
+        if self.channels:
             if category_id == "fav":
-                if not self.is_favorite(item):
-                    continue
+                favorites = self.favorite_keys()
+                items = [item for item in self.channels
+                         if self.favorite_key(item) in favorites]
             elif category_id.startswith("g:"):
-                if group != category_id[2:]:
-                    continue
-            if query and not _match(item.get("name"), query):
-                continue
-            items.append(item)
-        if not self.channels and category_id not in ("all", "fav"):
+                items = self._live_groups.get(category_id[2:]) or []
+            else:
+                items = self.channels
+            if query:
+                items = [item for item in items if _match(item.get("name"), query)]
+            return items
+        items = []
+        if category_id not in ("all", "fav"):
             # Portal without get_all_channels: ask for the genre page by page.
             genre = category_id[2:] if category_id.startswith("g:") else category_id
             page = 1
@@ -582,17 +803,17 @@ class MagBackend(BaseBackend):
                     if query and not _match(item.get("name"), query):
                         continue
                     items.append(item)
-                if page * safe_int(self.settings.get("page_size"), 300) >= total:
+                if page * _page_size(self.settings) >= total:
                     break
                 page += 1
         return items
 
     def epg_channel_refs(self):
         refs = []
-        for raw in self.channels:
+        for item in self.channels:
             refs.append({
-                "tvg_id": to_text(raw.get("tvg_id") or raw.get("xmltv_id") or ""),
-                "names": [raw.get("name"), raw.get("title")],
+                "tvg_id": to_text(item.get("tvg_id") or ""),
+                "names": [item.get("tvg_name"), item.get("name")],
             })
         return refs
 
@@ -607,7 +828,9 @@ class MagBackend(BaseBackend):
             "group": to_text(group),
             "kind": kind,
             "cmd": to_text(raw.get("cmd") or ""),
-            "raw": raw,
+            "link": to_text(raw.get("link") or ""),
+            "tvg_id": to_text(raw.get("tvg_id") or raw.get("xmltv_id") or ""),
+            "tvg_name": to_text(raw.get("tvg_name") or ""),
             "fav_key": "mag:" + (ident or short_hash(name, 10)),
             "number": safe_int(raw.get("number")),
         }
@@ -615,14 +838,26 @@ class MagBackend(BaseBackend):
 
     # ----------------------------------------------------------------- vod
     def vod_categories(self):
-        categories = [self._category("all", _("All"), safe_int((self.source.get("info") or {}).get("vod")))]
+        info = self.source.get("info") or {}
+        total = len(self.vod) if self.vod_ready else safe_int(info.get("vod"))
+        categories = [self._category("all", _("All"), total)]
         for genre in self.genres_vod:
             if self.hide_adult() and (genre.get("censored") or is_adult_category(genre.get("name"))):
                 continue
-            categories.append(self._category("g:" + genre["id"], genre["name"]))
+            genre_id = to_text(genre.get("id"))
+            count = len(self._vod_groups.get(genre_id) or []) if self.vod_ready else 0
+            categories.append(self._category("g:" + genre_id, genre["name"], count))
         return categories
 
     def vod_items(self, category_id, query="", page=1):
+        if self.vod_ready:
+            if category_id.startswith("g:"):
+                items = self._vod_groups.get(category_id[2:]) or []
+            else:
+                items = self.vod
+            if query:
+                items = [item for item in items if _match(item.get("name"), query)]
+            return self._page_slice(items, page)
         genre = category_id[2:] if category_id.startswith("g:") else "*"
         key = "vod|{0}|{1}".format(genre, page)
         cached = self._vod_cache.get(key)
@@ -637,7 +872,7 @@ class MagBackend(BaseBackend):
         return items, total
 
     def _vod(self, raw, group, kind):
-        ident = to_text(raw.get("id") or "")
+        ident = to_text(raw.get("id") or raw.get("movie_id") or raw.get("series_id") or "")
         name = to_text(raw.get("name") or raw.get("title") or "?")
         screenshot = raw.get("screenshot_uri") or raw.get("cover") or raw.get("logo") or raw.get("poster") or ""
         item = {
@@ -647,7 +882,8 @@ class MagBackend(BaseBackend):
             "group": to_text(group),
             "kind": kind,
             "cmd": to_text(raw.get("cmd") or ""),
-            "raw": raw,
+            "link": to_text(raw.get("link") or ""),
+            "series_id": to_text(raw.get("movie_id") or raw.get("series_id") or ""),
             "fav_key": "mag:" + (ident or short_hash(name, 10)),
             "year": to_text(raw.get("year") or ""),
             "rating": to_text(raw.get("rating_imdb") or raw.get("rating") or ""),
@@ -662,9 +898,26 @@ class MagBackend(BaseBackend):
 
     # -------------------------------------------------------------- series
     def series_categories(self):
-        return self.vod_categories()
+        info = self.source.get("info") or {}
+        total = len(self.series) if self.series_ready else safe_int(info.get("series"))
+        categories = [self._category("all", _("All"), total)]
+        for genre in self.genres_vod:
+            if self.hide_adult() and (genre.get("censored") or is_adult_category(genre.get("name"))):
+                continue
+            genre_id = to_text(genre.get("id"))
+            count = len(self._series_groups.get(genre_id) or []) if self.series_ready else 0
+            categories.append(self._category("g:" + genre_id, genre["name"], count))
+        return categories
 
     def series_items(self, category_id, query="", page=1):
+        if self.series_ready:
+            if category_id.startswith("g:"):
+                items = self._series_groups.get(category_id[2:]) or []
+            else:
+                items = self.series
+            if query:
+                items = [item for item in items if _match(item.get("name"), query)]
+            return self._page_slice(items, page)
         genre = category_id[2:] if category_id.startswith("g:") else "*"
         key = "series|{0}|{1}".format(genre, page)
         cached = self._series_cache.get(key)
@@ -752,10 +1005,7 @@ class MagBackend(BaseBackend):
         return BaseBackend.stream_options(self, item)
 
     def resolve(self, item):
-        cmd = to_text(item.get("cmd") or "").strip()
-        raw = item.get("raw") or {}
-        if not cmd:
-            cmd = to_text(raw.get("cmd") or raw.get("link") or "")
+        cmd = to_text(item.get("cmd") or item.get("link") or "").strip()
         if not cmd:
             raise MagError(_("This stream is not playable"))
         client = self._make_client()
@@ -764,7 +1014,7 @@ class MagBackend(BaseBackend):
         kind = item.get("kind") or "vod"
         series_id = 0
         if kind == "episode":
-            series_id = safe_int(item.get("series_id") or raw.get("movie_id") or raw.get("series_id"), 0)
+            series_id = safe_int(item.get("series_id"), 0)
         try:
             url = client.create_link(kind, cmd, series=series_id)
         except MagError:
@@ -836,6 +1086,10 @@ def source_summary(source, store):
     if not source:
         return _("No playlist selected")
     info = source.get("info") or {}
+    if info.get("prefetch") == "running":
+        return info.get("prefetch_text") or _("Preparing ...")
+    if info.get("prefetch") == "error" and not safe_int(info.get("channels")):
+        return _("Preparation failed")
     if source.get("type") == "mag":
         expires = info.get("expires") or ""
         status = info.get("status") or ""

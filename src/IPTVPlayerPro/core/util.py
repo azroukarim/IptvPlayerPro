@@ -39,6 +39,10 @@ except NameError:
 ENCODING = "utf-8"
 
 
+class PrefetchCancelled(Exception):
+    """Raised inside a background preparation job when it is superseded."""
+
+
 def py2():
     import sys
     return sys.version_info[0] < 3

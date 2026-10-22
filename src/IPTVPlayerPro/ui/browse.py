@@ -14,7 +14,8 @@ from Components.Pixmap import Pixmap
 from Components.VideoWindow import VideoWindow
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 
-from ..core.backends import source_label
+from ..core import prefetch
+from ..core.backends import active_backend, source_label
 from ..core.epg import clock_text
 from ..core.i18n import _
 from ..core.util import human_count, safe_int, to_text
@@ -48,6 +49,7 @@ class BackendScreen(ListScreen):
         self.query = u""
         self.page = 1
         self.total = 0
+        self._prefetch_reload = False
 
     def shown_ready(self):
         if not self.started:
@@ -61,22 +63,58 @@ class BackendScreen(ListScreen):
             return
         if self.backend.is_ready():
             self.build()
-        else:
-            progress = {"text": _("Loading ...")}
+            return
+        source = self.store.active_source() or {}
+        source_id = to_text(source.get("id"))
+        if source_id and prefetch.running(source_id):
+            self._wait_for_prefetch(source_id, reload=False)
+            return
+        self._load_backend()
 
-            def report(text):
-                progress["text"] = to_text(text)
+    def _load_backend(self):
+        progress = {"text": _("Loading ...")}
 
-            network_timeout = safe_int(self.store.settings.get("timeout"), 20)
-            limit = max(45, network_timeout * 3 + 10)
-            self.status_text(progress["text"])
-            self.run_async(
-                lambda: self.backend.refresh(progress=report),
-                self._loaded,
-                self._load_failed,
-                timeout=limit,
-                on_wait=lambda: self.status_text(progress["text"]),
-            )
+        def report(text):
+            progress["text"] = to_text(text)
+
+        network_timeout = safe_int(self.store.settings.get("timeout"), 20)
+        limit = max(45, network_timeout * 3 + 10)
+        self.status_text(progress["text"])
+        self.run_async(
+            lambda: self.backend.refresh(progress=report),
+            self._loaded,
+            self._load_failed,
+            timeout=limit,
+            on_wait=lambda: self.status_text(progress["text"]),
+        )
+
+    def _wait_for_prefetch(self, source_id, reload=False):
+        self._prefetch_reload = reload
+        self.status_text(prefetch.status_text(source_id) or _("Preparing ..."))
+        self.run_async(
+            lambda: prefetch.wait(source_id, timeout=1800),
+            self._prefetch_wait_done,
+            self._prefetch_wait_failed,
+            timeout=1830,
+            on_wait=lambda: self.status_text(
+                prefetch.status_text(source_id) or _("Preparing ...")),
+        )
+
+    def _prepare_reloaded_backend(self):
+        self.backend = active_backend(self.store)
+        self._epg_retry_at = 0
+
+    def _prefetch_wait_done(self, _result):
+        if self._prefetch_reload:
+            self._prepare_reloaded_backend()
+        self._load_backend()
+
+    def _prefetch_wait_failed(self, _error):
+        # A timeout in the wait helper is not fatal: the normal refresh below
+        # can still use whatever the worker has written so far.
+        if self._prefetch_reload:
+            self._prepare_reloaded_backend()
+        self._load_backend()
 
     def _loaded(self, _result):
         self.status_text(u"")
@@ -136,6 +174,13 @@ class BackendScreen(ListScreen):
 
     # -------------------------------------------------------------- refresh
     def reload_backend(self):
+        source = self.store.active_source() or {}
+        source_id = to_text(source.get("id"))
+        if source_id and prefetch.enabled(self.store):
+            started = prefetch.start(self.store, source_id, force=True)
+            if started or prefetch.running(source_id):
+                self._wait_for_prefetch(source_id, reload=True)
+                return
         progress = {"text": _("Refreshing ...")}
 
         def report(text):
@@ -848,12 +893,24 @@ class LiveBrowserScreen(BackendScreen):
             target = 0
         self._icon_start = max(0, target - LIVE_ICON_RADIUS)
         self._icon_end = min(len(self.browser_items), target + LIVE_ICON_RADIUS + 1)
+        # Fetching the favorites once per list render avoids a JSON/config
+        # lookup for every visible row.
+        favorites = None
+        try:
+            getter = getattr(self.backend, "favorite_keys", None)
+            if getter is not None:
+                favorites = set(getter())
+        except Exception:
+            favorites = None
         placeholder = pixmap("channel.png")
         entries = []
         for index, item in enumerate(self.browser_items):
             favorite = False
             try:
-                favorite = self.backend.is_favorite(item)
+                if favorites is not None:
+                    favorite = self.backend.favorite_key(item) in favorites
+                else:
+                    favorite = self.backend.is_favorite(item)
             except Exception:
                 pass
             icon = placeholder

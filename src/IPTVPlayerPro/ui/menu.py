@@ -3,11 +3,14 @@
 
 from __future__ import absolute_import
 
+from enigma import eTimer
+
 from Components.ActionMap import HelpableActionMap
 from Components.Label import Label
 from Components.Pixmap import Pixmap
 from Screens.Screen import Screen
 
+from ..core import prefetch
 from ..core.backends import active_backend, source_summary
 from ..core.i18n import _, set_language
 from ..core.store import Store
@@ -47,8 +50,11 @@ class MainMenu(AsyncScreen):
         self.skinName = "IPTVProMain"
         self.store = Store()
         set_language(self.store.settings.get("language") or "ar")
+        prefetch.reconcile(self.store)
         self.backend = active_backend(self.store)
         self.focus = 0
+        self._prefetch_timer = None
+        self._prefetch_state = ""
 
         self["bg"] = Pixmap()
         self["logo"] = Pixmap()
@@ -89,6 +95,7 @@ class MainMenu(AsyncScreen):
         self._set_focus(0)
         self.update_status()
         self.ensure_web_interface()
+        self._start_prefetch_timer()
 
     def on_shown(self):
         # The web interface writes the same config file.  Reload it so a
@@ -98,7 +105,9 @@ class MainMenu(AsyncScreen):
         except Exception:
             pass
         set_language(self.store.settings.get("language") or "ar")
+        prefetch.reconcile(self.store)
         self.backend = active_backend(self.store)
+        self._prefetch_state = self._prefetch_info_state()
         self.apply_language()
         self.ensure_web_interface()
 
@@ -123,7 +132,42 @@ class MainMenu(AsyncScreen):
             self["status2"].setText(_("Press MENU for the server list"))
             return
         self["status1"].setText(u"{0}: {1}".format(_("Current playlist"), source.get("name") or ""))
-        self["status2"].setText(source_summary(source, self.store))
+        text = prefetch.status_text(source.get("id"))
+        self["status2"].setText(text or source_summary(source, self.store))
+
+    def _prefetch_info_state(self):
+        source = self.store.active_source() or {}
+        return to_text((source.get("info") or {}).get("prefetch"))
+
+    def _start_prefetch_timer(self):
+        if self._prefetch_timer is None:
+            try:
+                self._prefetch_timer = eTimer()
+                self._prefetch_timer.callback.append(self._prefetch_tick)
+                self._timers.append(self._prefetch_timer)
+            except Exception:
+                self._prefetch_timer = None
+        if self._prefetch_timer is not None:
+            try:
+                self._prefetch_timer.start(1500, False)
+            except Exception:
+                pass
+
+    def _prefetch_tick(self):
+        if not getattr(self, "_alive", True):
+            return
+        source = self.store.active_source()
+        if source is None:
+            return
+        text = prefetch.status_text(source.get("id"))
+        if text:
+            self["status2"].setText(text)
+            self._prefetch_state = "running"
+            return
+        state = self._prefetch_info_state()
+        if state != self._prefetch_state:
+            self._prefetch_state = state
+            self.update_status()
 
     # ------------------------------------------------------------- actions
     def _set_focus(self, index):
@@ -230,6 +274,23 @@ class MainMenu(AsyncScreen):
     def _reload_confirmed(self, answer):
         if not answer:
             return
+        source = self.store.active_source() or {}
+        source_id = to_text(source.get("id"))
+        if source_id and prefetch.enabled(self.store):
+            if prefetch.start(self.store, source_id, force=True):
+                self["status2"].setText(
+                    prefetch.status_text(source_id) or _("Preparing ..."))
+                info_box(self.session, _("Refresh started in the background"),
+                         timeout=5)
+                self._prefetch_state = "running"
+                return
+            if prefetch.running(source_id):
+                self["status2"].setText(
+                    prefetch.status_text(source_id) or _("Preparing ..."))
+                info_box(self.session, _("The source is already being prepared."),
+                         timeout=5)
+                self._prefetch_state = "running"
+                return
         self["status2"].setText(_("Refreshing ..."))
         self.run_async(lambda: self.backend.refresh(force=True), self._reloaded, self._reload_failed)
 

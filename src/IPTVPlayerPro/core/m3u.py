@@ -184,6 +184,7 @@ def parse_playlist(text, base_url=""):
             item["season"] = season
             item["episode"] = episode
         item["id"] = short_hash(kind + "|" + (item.get("tvg_id") or "") + "|" + url, 14)
+        item["fav_key"] = favourite_key(item)
         items.append(item)
         current = None
         pending_ua = ""
