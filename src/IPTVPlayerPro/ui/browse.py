@@ -92,10 +92,10 @@ class BackendScreen(ListScreen):
         self._prefetch_reload = reload
         self.status_text(prefetch.status_text(source_id) or _("Preparing ..."))
         self.run_async(
-            lambda: prefetch.wait(source_id, timeout=1800),
+            lambda: prefetch.wait(source_id, timeout=60),
             self._prefetch_wait_done,
             self._prefetch_wait_failed,
-            timeout=1830,
+            timeout=70,
             on_wait=lambda: self.status_text(
                 prefetch.status_text(source_id) or _("Preparing ...")),
         )

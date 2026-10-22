@@ -20,6 +20,8 @@ from .m3u import (build_catalogue, favourite_key, is_adult_category,
 from .net import Http, NetError
 from .util import (PrefetchCancelled, clean_html, human_age, is_expired, now,
                    safe_int, short_hash, to_text)
+import logging
+_logger = logging.getLogger('iptvplayerpro.backends')
 
 
 def _match(text, query):
@@ -296,13 +298,10 @@ class M3UBackend(BaseBackend):
         return True
 
     def _apply(self, payload):
-        self.live = payload.get("live") or []
+        self.live = payload.get("live") or payload.get("channels") or []
         self.vod = payload.get("vod") or []
         self.series = payload.get("series") or []
         self._epg_urls = payload.get("epg_urls") or []
-        # Old caches did not carry favourite keys.  Creating them once here is
-        # much cheaper than hashing every channel name and URL while a list is
-        # being rendered or filtered.
         for item in self.live:
             if not item.get("fav_key"):
                 item["fav_key"] = favourite_key(item)
@@ -316,6 +315,10 @@ class M3UBackend(BaseBackend):
         for entry in self.series:
             self._series_index[entry.get("id")] = entry
         self.loaded = True
+
+    def _ensure_live_groups(self):
+        if not self._live_groups and self.live:
+            self._live_groups = _group_items(self.live, "Live TV")
 
     def prefetch(self, progress=None, force=False):
         if force or not self.loaded:
@@ -332,6 +335,7 @@ class M3UBackend(BaseBackend):
 
     # ---------------------------------------------------------------- live
     def live_categories(self):
+        self._ensure_live_groups()
         groups = sorted(self._live_groups.keys(), key=_sort_key)
         categories = [
             self._category("all", _("All channels"), len(self.live)),
@@ -345,16 +349,35 @@ class M3UBackend(BaseBackend):
         return categories
 
     def live_items(self, category_id, query=""):
-        if category_id == "fav":
-            favorites = self.favorite_keys()
-            items = [item for item in self.live if self.favorite_key(item) in favorites]
-        elif category_id.startswith("g:"):
-            items = self._live_groups.get(category_id[2:]) or []
-        else:
-            items = self.live
-        if query:
-            items = [item for item in items if _match(item.get("name"), query)]
-        return items
+        self._ensure_live_groups()
+        try:
+            if category_id == "fav":
+                favorites = self.favorite_keys()
+                items = [item for item in self.live if self.favorite_key(item) in favorites]
+            elif category_id.startswith("g:"):
+                items = self._live_groups.get(category_id[2:]) or []
+                if not items and self.live:
+                    group = category_id[2:]
+                    items = [item for item in self.live if (item.get("group") or "Live TV") == group]
+            else:
+                items = list(self.live)
+            if query:
+                items = [item for item in items if _match(item.get("name"), query)]
+            return items
+        except Exception as error:
+            _logger.exception("M3U live_items failed: %s", error)
+            # Ultimate fallback: scan the full list.
+            if category_id == "fav":
+                try:
+                    favorites = set(self.store.favorites(self.source_id))
+                    return [item for item in self.live if self.favorite_key(item) in favorites]
+                except Exception:
+                    return []
+            elif category_id.startswith("g:"):
+                group = category_id[2:]
+                return [item for item in self.live if (item.get("group") or "Live TV") == group]
+            else:
+                return list(self.live)
 
     def favorite_key(self, item):
         return item.get("fav_key") or favourite_key(item)
@@ -574,7 +597,7 @@ class MagBackend(BaseBackend):
     def _apply(self, payload):
         self.genres_itv = payload.get("genres_itv") or []
         self.genres_vod = payload.get("genres_vod") or []
-        raw_channels = payload.get("channels") or []
+        raw_channels = payload.get("channels") or payload.get("live") or []
         if payload.get("channels_compact"):
             self.channels = raw_channels
         else:
@@ -589,6 +612,10 @@ class MagBackend(BaseBackend):
         self._cache_ts = safe_int(payload.get("ts")) or now()
         self._rebuild_indexes()
         self.loaded = True
+
+    def _ensure_live_groups(self):
+        if not self._live_groups and self.channels:
+            self._live_groups = _group_items(self.channels, "")
 
     def _rebuild_indexes(self):
         self._live_groups = _group_items(self.channels, "")
@@ -767,6 +794,7 @@ class MagBackend(BaseBackend):
 
     # ---------------------------------------------------------------- live
     def live_categories(self):
+        self._ensure_live_groups()
         categories = [
             self._category("all", _("All channels"), len(self.channels)),
             self._category("fav", u"\u2605 " + _("Favorites"), self.favorites_count()),
@@ -779,6 +807,7 @@ class MagBackend(BaseBackend):
         return categories
 
     def live_items(self, category_id, query=""):
+        self._ensure_live_groups()
         if self.channels:
             if category_id == "fav":
                 favorites = self.favorite_keys()
@@ -786,6 +815,9 @@ class MagBackend(BaseBackend):
                          if self.favorite_key(item) in favorites]
             elif category_id.startswith("g:"):
                 items = self._live_groups.get(category_id[2:]) or []
+                if not items and self.channels:
+                    group = category_id[2:]
+                    items = [item for item in self.channels if to_text(item.get("group") or "") == group]
             else:
                 items = self.channels
             if query:
