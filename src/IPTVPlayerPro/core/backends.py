@@ -249,17 +249,19 @@ class M3UBackend(BaseBackend):
             return True
         payload = None if force else self.store.load_cache(self.source_id)
         if payload and self._cache_usable(payload) and payload.get("kind") == "m3u":
-            if payload.get("epg_urls") is None:
+            self._apply(payload)
+            if not self.live:
+                force = True
+            elif payload.get("epg_urls") is None:
                 # Cache written before EPG support: re-read the playlist once
                 # to discover its url-tvg header.  If the network is down, the
                 # old catalogue still remains usable without EPG.
                 try:
                     return self.refresh(force=True)
                 except Exception:
-                    self._apply(payload)
                     return True
-            self._apply(payload)
-            return True
+            else:
+                return True
         if progress:
             progress(_("Downloading playlist ..."))
         url = to_text(self.source.get("url")).strip()
@@ -541,7 +543,10 @@ class MagBackend(BaseBackend):
         payload = None if force else self.store.load_cache(self.source_id)
         if payload and payload.get("kind") == "mag" and self._cache_usable(payload):
             self._apply(payload)
-            return True
+            if not self.channels:
+                force = True
+            else:
+                return True
         client = self._make_client()
         if progress:
             progress(_("Connecting to the portal ..."))
