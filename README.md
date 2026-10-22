@@ -47,7 +47,7 @@ sh /tmp/iptvpro.sh
 
 ```sh
 sh /tmp/iptvpro.sh --no-restart      # تثبيت بدون إعادة تشغيل
-sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.7_all.ipk
+sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.8_all.ipk
 ```
 
 إذا نسخت `install.sh` وملف `ipk` إلى نفس المجلد على الرسيفر، فسيستخدم السكريبت الملف المحلي دون تنزيل.
@@ -55,12 +55,12 @@ sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.7_all.
 ### عبر ملف ipk
 
 1. حمّل الملف من مجلد `dist`:
-   `enigma2-plugin-extensions-iptvplayerpro_1.1.7_all.ipk`
+   `enigma2-plugin-extensions-iptvplayerpro_1.1.8_all.ipk`
 2. انسخه إلى الجهاز، مثلًا إلى `/tmp` عبر FTP/SFTP.
 3. من Telnet/SSH نفّذ:
 
 ```sh
-opkg install /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.7_all.ipk
+opkg install /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.8_all.ipk
 ```
 
 4. أعد تشغيل الواجهة:
@@ -76,7 +76,7 @@ init 3
 بعد التثبيت يظهر البلوجين في: **Menu → Plugins** وفي قائمة الإضافات.
 
 > إذا رفض `opkg` التثبيت بسبب الاعتماديات، استخدم:
-> `opkg install --force-depends /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.7_all.ipk`
+> `opkg install --force-depends /tmp/enigma2-plugin-extensions-iptvplayerpro_1.1.8_all.ipk`
 
 ## الإعداد الأول
 
@@ -167,6 +167,8 @@ http://<عنوان-الرسيفر>:8099/
 
 > في شاشة البث المباشر تعمل القناة دائمًا داخل الشاشة المصغرة ولا يغلق البلوجين تلقائيًا، بغض النظر عن خيار **إغلاق القوائم بعد التشغيل**. عند الخروج من البلوجين تتحول القناة إلى ملء الشاشة. إذا فشل بدء البث تظهر رسالة خطأ ويبقى البلوجين مفتوحًا. الخيار يؤثر في شاشات الأفلام والمسلسلات.
 
+> إذا بقيت صورة القناة ملء الشاشة بدل الظهور في المعاينة، تأكد من أن **محرك البث** هو `4097` (GStreamer)، ثم أرسل ملف التشخيص `/tmp/iptvplayerpro-mini.log` مع ذكر طراز الجهاز وإصدار الصورة.
+
 ## الإعدادات
 
 | الإعداد | الوصف |
@@ -216,7 +218,7 @@ python build_ipk.py
 سيتم إنشاء الملف في:
 
 ```
-dist/enigma2-plugin-extensions-iptvplayerpro_1.1.7_all.ipk
+dist/enigma2-plugin-extensions-iptvplayerpro_1.1.8_all.ipk
 ```
 
 ### الاختبارات

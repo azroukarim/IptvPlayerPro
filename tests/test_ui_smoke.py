@@ -80,6 +80,30 @@ class Font(object):
         self.size = size
 
 
+class Point(object):
+    def __init__(self, x=0, y=0):
+        self._x = x
+        self._y = y
+
+    def x(self):
+        return self._x
+
+    def y(self):
+        return self._y
+
+
+class Size(object):
+    def __init__(self, width=0, height=0):
+        self._width = width
+        self._height = height
+
+    def width(self):
+        return self._width
+
+    def height(self):
+        return self._height
+
+
 class Rect(object):
     def __init__(self, left=0, top=0, width=0, height=0):
         self._left = left
@@ -114,7 +138,9 @@ def _build_enigma():
     module.eListboxPythonMultiContent = object
     module.eTimer = Timer
     module.ePicLoad = PicLoad
+    module.ePoint = Point
     module.eRect = Rect
+    module.eSize = Size
     module.eServiceReference = ServiceReference
     module.getDesktop = lambda index=0: Desktop()
     module.gFont = Font
@@ -259,13 +285,27 @@ def _build_components():
 
     class VideoWindowInstance(object):
         def __init__(self):
-            self.position = None
+            self._position = Point(0, 0)
+            self._size = Size(1280, 720)
             self.fullscreen_position = None
             self.restored = False
             self.visible = True
 
+        def position(self):
+            return self._position
+
+        def size(self):
+            return self._size
+
+        def move(self, point):
+            self._position = point
+
+        def resize(self, size):
+            self._size = size
+
         def setPosition(self, index, left, top, width, height):
-            self.position = (index, left, top, width, height)
+            self._position = Point(left, top)
+            self._size = Size(width, height)
 
         def setFullScreenPosition(self, rect):
             self.fullscreen_position = (rect.left(), rect.top(), rect.width(), rect.height())
@@ -286,6 +326,12 @@ def _build_components():
             self.fb_height = fb_height
             self.instance = VideoWindowInstance()
             self.visible = True
+
+        def move(self, x, y):
+            self.instance.move(Point(x, y))
+
+        def resize(self, width, height):
+            self.instance.resize(Size(width, height))
 
         def show(self):
             self.visible = True
@@ -599,6 +645,7 @@ def main():
         assert live._preview_active is True
         assert live["preview"].visible is False
         assert live["previewVideo"].visible is True
+        assert live["previewVideo"].instance.fullscreen_position == (418, 83, 288, 240)
         assert not hasattr(live, "closed")
         live.stop_preview()
         assert live._preview_active is False

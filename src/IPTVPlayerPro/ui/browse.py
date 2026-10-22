@@ -290,6 +290,7 @@ class LiveBrowserScreen(BackendScreen):
         self._icon_end = 0
         self._preview_active = False
         self._preview_timer = None
+        self._preview_attempts = 0
 
         self["bg"] = Pixmap()
         self["header"] = Pixmap()
@@ -419,22 +420,124 @@ class LiveBrowserScreen(BackendScreen):
         except Exception:
             pass
 
-    def _refresh_preview_video(self):
-        """Reapply the widget's skin rectangle to the hardware video plane.
+    def _aml_video(self):
+        return os.path.exists("/sys/class/video/axis")
 
-        eVideoWidget::setPosition() is protected in the C++ API, so showing
-        the widget is the supported way to make it write its destination.
-        The hide/show pair also cancels the delayed full-size restore that a
-        hide schedules.
+    def _preview_rect(self):
+        """Return the preview rectangle in the destination coordinate space.
+
+        Amlogic images take skin coordinates in setFullScreenPosition() and
+        scale them to the desktop.  Broadcom and other legacy images use the
+        720x576 video destination space directly.
+        """
+        left, top, width, height = LIVE_VIDEO_RECT
+        if self._aml_video():
+            return eRect(left, top, width, height)
+        return eRect(
+            left * 720 // 1280,
+            top * 576 // 720,
+            width * 720 // 1280,
+            height * 576 // 720,
+        )
+
+    def _legacy_rect_matches(self, left, top, width, height):
+        """Return True when the Broadcom destination already has this rect.
+
+        Checking first avoids re-writing /proc (and potentially glitching the
+        picture) on every keep-alive tick once the stream has settled.
+        """
+        if self._aml_video():
+            return False
+        base = "/proc/stb/vmpeg/0/dst_"
+        for name, expected in (("left", left), ("top", top),
+                               ("width", width), ("height", height)):
+            try:
+                handle = open(base + name, "r")
+                try:
+                    current = int(handle.read().strip(), 16)
+                finally:
+                    handle.close()
+            except Exception:
+                return False
+            if current != int(expected):
+                return False
+        return True
+
+    def _write_legacy_video_rect(self, left, top, width, height):
+        """Write the Broadcom /proc destination directly.
+
+        This bypasses older eVideoWidget implementations that only remember
+        setFullScreenPosition() without applying it.  It also survives the
+        destination resets that some 4097 handlers perform while starting a
+        stream.  Amlogic and any image without these proc files are untouched.
+        """
+        if self._aml_video():
+            return False
+        base = "/proc/stb/vmpeg/0/dst_"
+        if not os.path.exists(base + "left"):
+            return False
+        values = (("left", left), ("top", top), ("width", width),
+                  ("height", height), ("apply", 1))
+        try:
+            for name, value in values:
+                handle = open(base + name, "w")
+                try:
+                    handle.write("%08x\n" % int(value))
+                finally:
+                    handle.close()
+            return True
+        except Exception:
+            return False
+
+    def _apply_preview_video(self):
+        """Force the main video plane into the preview pane.
+
+        The skin widget applies its rectangle when shown, but some 4097
+        service handlers reset the destination after the stream starts.  Some
+        images also ignore the geometry of a widget that was hidden during
+        layout.  Set the widget geometry explicitly, write the hardware
+        destination, and keep re-applying it while the stream settles.
         """
         widget = self.get("previewVideo")
-        if widget is None:
+        instance = self._video_instance()
+        if widget is None or instance is None:
+            self._log_preview("no video widget")
             return
+
+        left, top, width, height = LIVE_VIDEO_RECT
+        # Fallback for images where the hidden widget did not receive its
+        # skin size event.  move()/resize() are public eWidget methods and
+        # make eVideoWidget recalculate its destination.
         try:
-            widget.hide()
+            widget.move(left, top)
+        except Exception:
+            pass
+        try:
+            widget.resize(width, height)
+        except Exception:
+            pass
+        try:
             widget.show()
         except Exception:
             pass
+
+        rect = self._preview_rect()
+        if not self._legacy_rect_matches(rect.left(), rect.top(),
+                                         rect.width(), rect.height()):
+            try:
+                instance.setFullScreenPosition(rect)
+            except Exception as error:  # noqa: BLE001
+                self._log_preview("setFullScreenPosition failed: {0}".format(error))
+
+            if not self._aml_video():
+                # Older Broadcom images apply the stored rectangle through
+                # restoreFullsize(); current images are already handled above.
+                try:
+                    instance.restoreFullsize()
+                except Exception:
+                    pass
+                self._write_legacy_video_rect(rect.left(), rect.top(),
+                                              rect.width(), rect.height())
 
     def _restore_fullscreen_video(self):
         widget = self.get("previewVideo")
@@ -443,7 +546,7 @@ class LiveBrowserScreen(BackendScreen):
             # setFullScreenPosition() writes the legacy 720x576 destination
             # immediately and scales correctly on AML.  It also stores the
             # position used by the widget's delayed restore timer.
-            aml = os.path.exists("/sys/class/video/axis")
+            aml = self._aml_video()
             full = eRect(0, 0, 1280, 720) if aml else eRect(0, 0, 720, 576)
             try:
                 instance.setFullScreenPosition(full)
@@ -453,19 +556,52 @@ class LiveBrowserScreen(BackendScreen):
                 instance.restoreFullsize()
             except Exception:
                 pass
+            if not aml:
+                self._write_legacy_video_rect(0, 0, 720, 576)
         if widget is not None:
             try:
                 widget.hide()
             except Exception:
                 pass
 
+    def _log_preview(self, message):
+        """Write a few diagnostics lines that can be collected from /tmp."""
+        try:
+            instance = self._video_instance()
+            parts = [message]
+            if instance is not None:
+                try:
+                    position = instance.position()
+                    size = instance.size()
+                    parts.append("widget={0},{1} {2}x{3}".format(
+                        position.x(), position.y(), size.width(), size.height()))
+                except Exception:
+                    pass
+            parts.append("aml={0}".format(self._aml_video()))
+            for name in ("left", "top", "width", "height"):
+                try:
+                    handle = open("/proc/stb/vmpeg/0/dst_" + name, "r")
+                    try:
+                        parts.append("{0}={1}".format(name, handle.read().strip()))
+                    finally:
+                        handle.close()
+                except Exception:
+                    break
+            handle = open("/tmp/iptvplayerpro-mini.log", "ab")
+            try:
+                handle.write((u" | ".join(parts) + u"\n").encode("utf-8"))
+            finally:
+                handle.close()
+        except Exception:
+            pass
+
     def _show_preview_video(self):
         self._preview_active = True
         self._set_visible("preview", False)
         self._set_visible("previewLogo", False)
         self._set_visible("previewKind", False)
-        self._set_visible("previewVideo", True)
-        self._refresh_preview_video()
+        self._apply_preview_video()
+        self._log_preview("preview start")
         if self._preview_timer is None:
             try:
                 self._preview_timer = eTimer()
@@ -474,18 +610,43 @@ class LiveBrowserScreen(BackendScreen):
                 self._preview_timer = None
         if self._preview_timer is not None:
             try:
-                # Some service handlers reset the video destination while the
-                # new stream starts.  Re-apply the rectangle afterwards.
-                self._preview_timer.start(600, True)
+                self._preview_timer.stop()
             except Exception:
                 pass
+            # Some stream handlers reset the destination after playService()
+            # and some reset it again while zapping.  Poll quickly while the
+            # stream starts, then keep a slow keep-alive for the whole preview.
+            # On Broadcom the apply method reads /proc first and only writes
+            # when the rectangle changed.  On Amlogic repeated axis writes can
+            # be visible, so stop after the initial ten seconds there.
+            self._preview_attempts = 20
+            try:
+                self._preview_timer.start(500, False)
+            except Exception:
+                self._preview_attempts = 0
 
     def _reapply_preview(self):
-        if self._preview_active:
-            self._refresh_preview_video()
+        if not self._preview_active:
+            try:
+                self._preview_timer.stop()
+            except Exception:
+                pass
+            return
+        self._apply_preview_video()
+        if self._preview_attempts > 0:
+            self._preview_attempts -= 1
+            if self._preview_attempts == 0:
+                try:
+                    if self._aml_video():
+                        self._preview_timer.stop()
+                    else:
+                        self._preview_timer.start(2000, False)
+                except Exception:
+                    pass
 
     def stop_preview(self):
         self._preview_active = False
+        self._preview_attempts = 0
         if self._preview_timer is not None:
             try:
                 self._preview_timer.stop()
@@ -493,6 +654,7 @@ class LiveBrowserScreen(BackendScreen):
                 pass
             self._preview_timer = None
         self._restore_fullscreen_video()
+        self._log_preview("preview stop")
         self._set_visible("previewVideo", False)
         self._set_visible("preview", True)
         self._set_visible("previewLogo", True)
@@ -744,9 +906,10 @@ class LiveBrowserScreen(BackendScreen):
         """
         self.status_text(u"")
         user_agent, options = self.stream_options(item)
+        service_type = safe_int(self.store.settings.get("service_type"), 4097)
+        self._log_preview("play engine={0}".format(service_type))
         try:
-            play_url(self.session, url,
-                     safe_int(self.store.settings.get("service_type"), 4097),
+            play_url(self.session, url, service_type,
                      item.get("name"), user_agent, options)
         except Exception as error:  # noqa: BLE001
             # A failed stream must never close the plugin.  Restore the
