@@ -42,7 +42,7 @@ def storage_label(value):
 
 
 class SettingsScreen(ListScreen):
-    item_height = 66
+    item_height = 72
 
     def __init__(self, session, store):
         ListScreen.__init__(self, session, _("Player settings"), u"", _("OK change  •  RED close"))
