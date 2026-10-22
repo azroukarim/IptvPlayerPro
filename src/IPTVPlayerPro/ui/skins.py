@@ -83,6 +83,25 @@ LIVE_SKIN = """
 </screen>
 """
 
+PLAYER_SKIN = """
+<screen name="IPTVProPlayer" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder" backgroundColor="#00000000">
+    <widget name="topBar" position="0,0" size="1280,70" alphatest="blend" scale="1" />
+    <widget name="logo" position="22,12" size="120,44" alphatest="blend" scale="1" />
+    <widget name="title" position="158,12" size="500,44" font="Regular;24" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" />
+    <widget name="clock" position="1000,12" size="256,44" font="Regular;24" halign="right" valign="center" foregroundColor="#ffffff" transparent="1" />
+
+    <widget name="bottomBar" position="0,520" size="1280,200" alphatest="blend" scale="1" />
+    <widget name="logoBg" position="32,540" size="104,104" alphatest="blend" scale="1" />
+    <widget name="channelLogo" position="44,552" size="80,80" alphatest="blend" scale="1" />
+    <widget name="channelName" position="156,536" size="780,46" font="Regular;30" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" />
+    <widget name="channelMeta" position="156,584" size="780,30" font="Regular;18" halign="left" valign="center" foregroundColor="#b9bdd8" transparent="1" />
+    <widget name="liveBg" position="156,620" size="72,30" alphatest="blend" scale="1" />
+    <widget name="liveLabel" position="156,620" size="72,30" font="Regular;16" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" />
+    <widget name="volumeText" position="950,536" size="298,34" font="Regular;20" halign="right" valign="center" foregroundColor="#e8e8ff" transparent="1" />
+    <widget name="hint" position="36,668" size="1208,32" font="Regular;17" halign="left" valign="center" foregroundColor="#9fa6cc" transparent="1" />
+</screen>
+"""
+
 INFO_SKIN = """
 <screen name="IPTVProInfo" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder">
     <widget name="bg" position="0,0" size="1280,720" scale="1" />

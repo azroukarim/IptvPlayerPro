@@ -82,6 +82,10 @@ _AR = {
         u"OK تشغيل  •  أخضر بحث  •  أصفر مفضلة  •  أزرق تحديث  •  أحمر رجوع",
     "OK mini TV  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back":
         u"OK شاشة مصغرة  •  أخضر بحث  •  أصفر مفضلة  •  أزرق تحديث  •  أحمر رجوع",
+    "OK mini TV  •  OK again full screen  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back":
+        u"OK شاشة مصغرة  •  OK مرة أخرى شاشة كاملة  •  أخضر بحث  •  أصفر مفضلة  •  أزرق تحديث  •  أحمر رجوع",
+    "OK info  •  LEFT/RIGHT volume  •  YELLOW mute  •  RED back":
+        u"OK معلومات  •  يسار/يمين الصوت  •  أصفر كتم  •  أحمر رجوع",
     "OK play  •  GREEN search  •  BLUE reload  •  RED back":
         u"OK تشغيل  •  أخضر بحث  •  أزرق تحديث  •  أحمر رجوع",
     "OK open  •  GREEN search  •  BLUE reload  •  RED back":
@@ -110,6 +114,8 @@ _AR = {
     "Removed from favorites": u"أزيلت من المفضلة",
     "Playing ...": u"جارٍ التشغيل ...",
     "Playing in mini TV": u"يعمل في الشاشة المصغرة",
+    "Volume": u"الصوت",
+    "Muted": u"صامت",
     "Resolving stream ...": u"جارٍ تجهيز البث ...",
     "Could not open the stream": u"تعذر فتح البث",
     "This stream is not playable": u"هذا البث غير قابل للتشغيل",

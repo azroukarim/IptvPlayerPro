@@ -520,6 +520,7 @@ def main():
                                              SeasonsScreen, SeriesCategoriesScreen,
                                              SeriesScreen, VodCategoriesScreen, VodScreen)
         from IPTVPlayerPro.ui.info import InfoScreen
+        from IPTVPlayerPro.ui.player import LivePlayerScreen
         from IPTVPlayerPro.ui.settings import SettingsScreen
         from IPTVPlayerPro.ui.sources import SourcesScreen
         from IPTVPlayerPro import plugin as plugin_module
@@ -579,6 +580,9 @@ def main():
 
             def is_favorite(self, item):
                 return False
+
+            def resolve(self, item):
+                return item["url"]
 
         live = LiveBrowserScreen(session, store, FakeBackend())
         live._layout_ready()
@@ -647,11 +651,56 @@ def main():
         assert live["previewVideo"].visible is True
         assert live["previewVideo"].instance.fullscreen_position == (418, 83, 288, 240)
         assert not hasattr(live, "closed")
+
+        # The second OK must reuse the running stream and open the full-screen
+        # player with its information bar.  It must not resolve or zap again.
+        opened_before = len(session.opened)
+        calls_before = len(calls)
+        live.play_item(live.selected_channel())
+        assert len(session.opened) == opened_before + 1
+        assert session.opened[-1][0] is LivePlayerScreen
+        assert len(calls) == calls_before
+        assert live["previewVideo"].visible is False
+        assert live["previewVideo"].instance.fullscreen_position == (0, 0, 720, 576)
+        # Closing the full-screen player returns to the mini TV pane without
+        # restarting the channel.
+        live._fullscreen_closed()
+        assert live["previewVideo"].visible is True
+        assert live["previewVideo"].instance.fullscreen_position == (418, 83, 288, 240)
+        assert len(calls) == calls_before
+
         live.stop_preview()
         assert live._preview_active is False
         assert live["preview"].visible is True
         assert live["previewVideo"].visible is False
         assert live["previewVideo"].instance.fullscreen_position == (0, 0, 720, 576)
+
+        # A quick double press while the resolver is still running must not
+        # start a second zap; it should open the player after the first
+        # stream becomes ready.
+        calls[:] = []
+        pending = {}
+        original_run_async = live.run_async
+
+        def fake_run_async(fn, on_done, on_error=None, **kwargs):
+            pending["done"] = on_done
+            pending["fn"] = fn
+
+        live.run_async = fake_run_async
+        browse_module.play_url = fake_play_url
+        try:
+            live.play_item(live.selected_channel())
+            live.play_item(live.selected_channel())
+            assert "done" in pending
+            assert not calls
+            pending["done"](pending["fn"]())
+        finally:
+            live.run_async = original_run_async
+            browse_module.play_url = original_play_url
+        assert len(calls) == 1
+        assert session.opened[-1][0] is LivePlayerScreen
+        live._fullscreen_closed()
+        live.stop_preview()
 
         from IPTVPlayerPro.core.net import NetError
 
@@ -672,11 +721,39 @@ def main():
         assert live._preview_active is False
 
         import xml.etree.ElementTree as ET
-        from IPTVPlayerPro.ui.skins import LIVE_SKIN
+        from IPTVPlayerPro.ui.skins import LIVE_SKIN, PLAYER_SKIN
         skin_names = set(widget.get("name") for widget in ET.fromstring(LIVE_SKIN).findall("widget"))
         for name in ("bg", "header", "categories", "channels", "previewLogo",
                      "previewName", "previewVideo", "playBg", "favBg", "hint"):
             assert name in skin_names, name
+
+        player_skin_names = set(
+            widget.get("name")
+            for widget in ET.fromstring(PLAYER_SKIN).findall("widget"))
+        for name in ("topBar", "logo", "title", "clock", "bottomBar", "logoBg",
+                     "channelLogo", "channelName", "channelMeta", "liveBg",
+                     "liveLabel", "volumeText", "hint"):
+            assert name in player_skin_names, name
+
+        player = LivePlayerScreen(session, {
+            "name": "News One", "group": "News", "number": 1,
+            "url": "http://example.test/one"}, browse_module.pixmap("channel.png"))
+        player._layout_ready()
+        assert player["channelName"].text == "News One"
+        assert "News" in player["channelMeta"].text
+        assert player["liveLabel"].text == "LIVE"
+        assert player["hint"].text
+        player.toggle_info()
+        assert player["topBar"].visible is False
+        player.toggle_info()
+        assert player["topBar"].visible is True
+        player._start_clock()
+        player._tick()
+        player.volume_up()
+        player.volume_down()
+        player.toggle_mute()
+        player.doClose()
+        assert player._clock_timer is None
 
         from IPTVPlayerPro.ui.base import play_url
 

@@ -113,12 +113,38 @@ def make_panels():
          "live_button_dark.png")
 
 
+def make_player_assets():
+    """Assets for the full-screen Live TV player and its information bar."""
+    top = vertical_gradient((1280, 70), (30, 33, 88), (10, 12, 32)).convert("RGBA")
+    draw = ImageDraw.Draw(top)
+    draw.rectangle([0, 0, 1279, 1], fill=(65, 59, 127, 255))
+    draw.line([(0, 68), (1279, 68)], fill=(91, 89, 150, 255), width=2)
+    save(top, "player_top.png")
+
+    bottom = vertical_gradient((1280, 200), (12, 14, 36), (3, 4, 10)).convert("RGBA")
+    draw = ImageDraw.Draw(bottom)
+    draw.rectangle([0, 0, 1279, 1], fill=(88, 84, 148, 255))
+    draw.line([(0, 136), (1279, 136)], fill=(172, 170, 214, 255), width=1)
+    save(bottom, "player_bottom.png")
+
+    live = Image.new("RGBA", (72, 30), (0, 0, 0, 0))
+    ImageDraw.Draw(live).rounded_rectangle(
+        [0, 0, 71, 29], radius=6, fill=(207, 22, 52, 255),
+        outline=(255, 122, 142, 255), width=1)
+    save(live, "player_live.png")
+
+    save(rounded_panel((104, 104), (18, 20, 42, 255),
+                       (70, 72, 130, 255), 12, 2),
+         "player_logo_bg.png")
+
+
 def main():
     if not os.path.isdir(OUT):
         os.makedirs(OUT)
     make_background()
     make_header()
     make_panels()
+    make_player_assets()
     print("Live screen assets generated.")
 
 

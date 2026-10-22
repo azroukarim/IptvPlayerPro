@@ -19,6 +19,7 @@ from ..core.util import human_count, safe_int, to_text
 from .base import (AsyncScreen, ListScreen, LiveList, category_entry,
                    channel_entry, info_box, pixmap, play_url, row_entry)
 from .info import InfoScreen
+from .player import LivePlayerScreen
 from .skins import LIVE_SKIN
 
 
@@ -292,6 +293,12 @@ class LiveBrowserScreen(BackendScreen):
         self._preview_timer = None
         self._preview_attempts = 0
         self._preview_static = False
+        # Identity of the channel currently shown in the mini TV.  A second
+        # OK on the same channel opens the full-screen player instead of
+        # restarting the stream.
+        self._mini_key = None
+        self._mini_loading_key = None
+        self._fullscreen_pending_key = None
 
         self["bg"] = Pixmap()
         self["header"] = Pixmap()
@@ -380,7 +387,7 @@ class LiveBrowserScreen(BackendScreen):
         self["navMovies"].setText(_("Movies"))
         self["navSeries"].setText(_("Series"))
         self["searchText"].setText(u"GREEN  " + _("Search channels"))
-        self["hint"].setText(_("OK mini TV  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
+        self["hint"].setText(_("OK mini TV  •  OK again full screen  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
         self["playLabel"].setText(u"OK  " + _("Play"))
         self["previewKind"].setText(_("CHANNEL PREVIEW"))
         self["previewName"].setText(_("Live TV"))
@@ -650,6 +657,9 @@ class LiveBrowserScreen(BackendScreen):
     def stop_preview(self):
         self._preview_active = False
         self._preview_attempts = 0
+        self._mini_key = None
+        self._mini_loading_key = None
+        self._fullscreen_pending_key = None
         if self._preview_timer is not None:
             try:
                 self._preview_timer.stop()
@@ -899,6 +909,33 @@ class LiveBrowserScreen(BackendScreen):
                     pass
         return pixmap("channel.png")
 
+    def play_item(self, item):
+        """Start a channel in the mini TV, or go full-screen on second OK.
+
+        The channel that is already visible in the preview pane is never
+        resolved or zapped again.  Pressing OK on it simply moves the running
+        decoder picture to full screen and opens the information bar.
+        """
+        key = self._channel_key(item)
+        if self._mini_loading_key is not None:
+            # A double press while the stream is still resolving should not
+            # start a second zap.  Remember the second OK and open the player
+            # as soon as the mini TV stream is ready.
+            if self._mini_loading_key == key:
+                self._fullscreen_pending_key = key
+            return
+        if self._preview_active and key == self._mini_key:
+            self.open_fullscreen(item)
+            return
+        self._mini_loading_key = key
+        self._fullscreen_pending_key = None
+        BackendScreen.play_item(self, item)
+
+    def _play_failed(self, error):
+        self._mini_loading_key = None
+        self._fullscreen_pending_key = None
+        BackendScreen._play_failed(self, error)
+
     def _play(self, url, item):
         """Play a Live TV channel in the right-hand mini TV pane.
 
@@ -907,6 +944,11 @@ class LiveBrowserScreen(BackendScreen):
         while the channel is visible in the preview pane.  Movies and series
         retain their normal full-screen playback behaviour.
         """
+        key = self._channel_key(item)
+        # Resolution has finished; no second click can arrive until this
+        # callback returns.  Clear the loading marker even if the zap fails so
+        # the channel can be retried immediately.
+        self._mini_loading_key = None
         self.status_text(u"")
         user_agent, options = self.stream_options(item)
         service_type = safe_int(self.store.settings.get("service_type"), 4097)
@@ -920,8 +962,39 @@ class LiveBrowserScreen(BackendScreen):
             self.stop_preview()
             self.show_error(error)
             return
+        self._mini_loading_key = None
+        self._mini_key = key
         self._show_preview_video()
         self.status_text(_("Playing in mini TV"))
+        if self._fullscreen_pending_key == key:
+            self._fullscreen_pending_key = None
+            self.open_fullscreen(item)
+
+    def open_fullscreen(self, item):
+        """Move the already-running mini TV stream to the full-screen player."""
+        if not self._preview_active or self._mini_key != self._channel_key(item):
+            return
+        if self._preview_timer is not None:
+            try:
+                self._preview_timer.stop()
+            except Exception:
+                pass
+        self._restore_fullscreen_video()
+        logo = self._channel_icon(item)
+        try:
+            self.session.openWithCallback(
+                self._fullscreen_closed, LivePlayerScreen, item, logo)
+        except Exception as error:  # noqa: BLE001
+            # If the player screen cannot be created, return to the mini TV
+            # instead of leaving the user on a full-screen picture with the
+            # browser chrome still visible.
+            if self._preview_active:
+                self._show_preview_video()
+            self.show_error(error)
+
+    def _fullscreen_closed(self, result=None):
+        if self._preview_active and getattr(self, "_alive", True):
+            self._show_preview_video()
 
     def refresh_icon_window(self):
         """Load logos only for a small window around the selected channel."""
