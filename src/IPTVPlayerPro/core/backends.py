@@ -22,6 +22,13 @@ from .util import (PrefetchCancelled, clean_html, human_age, is_expired, now,
                    safe_int, short_hash, to_text)
 import logging
 _logger = logging.getLogger('iptvplayerpro.backends')
+try:
+    _handler = logging.FileHandler('/tmp/iptvplayerpro-backends.log')
+    _handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+    _logger.addHandler(_handler)
+    _logger.setLevel(logging.DEBUG)
+except Exception:
+    pass
 
 
 def _match(text, query):
