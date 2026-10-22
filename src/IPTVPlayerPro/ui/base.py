@@ -592,17 +592,18 @@ def play_url(session, url, service_type=4097, name=u"", item_ua=None, item_opts=
     url = stream_url_with_headers(url, item_ua, item_opts)
     if not url:
         raise NetError(_("This stream is not playable"))
-    # Keep header values (which are part of the service reference syntax)
-    # untouched; only quote the actual stream URL.
-    base, separator, headers = url.partition("#")
+    # Preferred path: pass the URL directly to eServiceReference(type, flags,
+    # path).  The string parser treats a raw "http://" as a path delimiter and
+    # truncates it unless the colons are percent-encoded.  The three-argument
+    # constructor keeps the complete URL, including spaces in HTTP headers.
     try:
-        safe_url = quote(base, safe="%:/?&=+,;@!$'()*[]~-._")
-    except Exception:
-        safe_url = base.replace(" ", "%20")
-    if separator:
-        safe_url = u"{0}#{1}".format(safe_url, headers)
-    reference = u"{0}:0:1:0:0:0:0:0:0:0:{1}".format(int(service_type), safe_url)
-    service = eServiceReference(reference)
+        service = eServiceReference(int(service_type), 0, url)
+    except TypeError:
+        # Very old images only expose the string constructor.  Encode the
+        # colons so the path is not mistaken for a service reference field.
+        safe_url = quote(url, safe="%/?&=+,;@!$'()*[]~-._")
+        reference = u"{0}:0:1:0:0:0:0:0:0:0:{1}".format(int(service_type), safe_url)
+        service = eServiceReference(reference)
     if name:
         try:
             service.setName(to_text(name))

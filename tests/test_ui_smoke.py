@@ -60,8 +60,11 @@ class PicLoad(object):
 
 
 class ServiceReference(object):
-    def __init__(self, reference):
-        self.reference = reference
+    def __init__(self, reference, flags=0, path=None):
+        if path is not None:
+            self.reference = path
+        else:
+            self.reference = reference
         self.name = ""
 
     def setName(self, name):
@@ -557,6 +560,7 @@ def main():
         play_url(header_session, "http://example.test/live.ts", item_ua="VLC/3.0",
                  item_opts="Referer=http://portal.example/c/")
         header_reference = header_session.current.toString()
+        assert header_reference.startswith("http://example.test/live.ts#")
         assert "User-Agent=VLC/3.0" in header_reference
         assert "Referer=http://portal.example/c/" in header_reference
 
