@@ -71,12 +71,13 @@ def pixmap(name, cache=True):
     return LoadPixmap(path)
 
 
-def font(size, bold=False):
-    key = (size, bold)
+def font(size, bold=False, font_name=None):
+    key = (size, bold, font_name)
     ptr = _FONTS.get(key)
     if ptr is None:
         try:
-            ptr = gFont("Bold" if bold else "Regular", size)
+            font_basename = font_name or "Regular"
+            ptr = gFont(font_basename, size)
         except Exception:
             ptr = gFont("Regular", size)
         _FONTS[key] = ptr

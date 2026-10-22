@@ -17,14 +17,14 @@
 # ============================================================
 
 VERSION="1.4.0"
-PKG_NAME="enigma2-plugin-extensions-iptvplayerpro"
-PKG="${PKG_NAME}_${VERSION}_all.ipk"
+TAR_NAME="IPTVPlayerPro.tar.gz"
 BASE_RAW="https://raw.githubusercontent.com/azroukarim/IptvPlayerPro/main/dist"
 BASE_GH="https://github.com/azroukarim/IptvPlayerPro/raw/main/dist"
-TMP="/tmp/${PKG}"
+TMP="/tmp/${TAR_NAME}"
+TARGET_DIR="/usr/lib/enigma2/python/Plugins/Extensions/IPTVPlayerPro"
 
 NO_RESTART=0
-LOCAL_IPK=""
+LOCAL_TAR=""
 
 say() {
     printf '%s\n' "[IPTV Player Pro] $*"
@@ -38,7 +38,7 @@ die() {
 usage() {
     printf '%s\n' "IPTV Player Pro installer"
     printf '%s\n' "  --no-restart    install without restarting Enigma2"
-    printf '%s\n' "  --ipk FILE      install a local .ipk file"
+    printf '%s\n' "  --tar FILE      install a local .tar.gz file"
     printf '%s\n' "  --help          show this help"
 }
 
@@ -58,10 +58,10 @@ while [ $# -gt 0 ]; do
         --no-restart)
             NO_RESTART=1
             ;;
-        --ipk)
+        --tar|--ipk)
             shift
-            [ $# -gt 0 ] || die "--ipk needs a file path"
-            LOCAL_IPK="$1"
+            [ $# -gt 0 ] || die "--tar needs a file path"
+            LOCAL_TAR="$1"
             ;;
         -h|--help)
             usage
@@ -74,44 +74,34 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# If the script was copied next to the .ipk, use that local file.
+# If the script was copied next to the package, use that local file.
 SELF_DIR="."
 case "$0" in
     */*) SELF_DIR="${0%/*}" ;;
 esac
-if [ -z "$LOCAL_IPK" ] && [ -f "$SELF_DIR/$PKG" ]; then
-    LOCAL_IPK="$SELF_DIR/$PKG"
+if [ -z "$LOCAL_TAR" ] && [ -f "$SELF_DIR/$TAR_NAME" ]; then
+    LOCAL_TAR="$SELF_DIR/$TAR_NAME"
 fi
 
-if [ -n "$LOCAL_IPK" ]; then
-    [ -f "$LOCAL_IPK" ] || die "file not found: $LOCAL_IPK"
-    TMP="$LOCAL_IPK"
+if [ -n "$LOCAL_TAR" ]; then
+    [ -f "$LOCAL_TAR" ] || die "file not found: $LOCAL_TAR"
+    TMP="$LOCAL_TAR"
     say "Using local package: $TMP"
 else
-    say "Downloading ${PKG} ..."
-    URL="${IPTVPRO_URL:-$BASE_RAW/$PKG}"
-    download "$URL" || download "$BASE_GH/$PKG" || die "download failed, check the network on the receiver"
+    say "Downloading ${TAR_NAME} ..."
+    URL="${IPTVPRO_URL:-$BASE_RAW/$TAR_NAME}"
+    download "$URL" || download "$BASE_GH/$TAR_NAME" || die "download failed, check the network on the receiver"
     [ -s "$TMP" ] || die "the downloaded file is empty"
 fi
 
-# Locate opkg even when /usr/bin is not in PATH.
-OPKG=""
-for candidate in opkg /usr/bin/opkg /usr/sbin/opkg /bin/opkg; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-        OPKG="$candidate"
-        break
-    fi
-done
-[ -n "$OPKG" ] || die "opkg was not found on this image"
+say "Extracting and installing to $TARGET_DIR ..."
+# Remove old version if present to avoid stale/orphaned files
+rm -rf "$TARGET_DIR"
 
-say "Installing ${PKG} ..."
-"$OPKG" install "$TMP" || \
-    "$OPKG" install --force-reinstall "$TMP" || \
-    "$OPKG" install --force-depends --force-overwrite --force-reinstall "$TMP" || \
-    die "installation failed"
+tar -xzf "$TMP" -C / || die "tar extraction failed"
 
-[ "$TMP" = "$LOCAL_IPK" ] || rm -f "$TMP"
-say "Installed successfully: /usr/lib/enigma2/python/Plugins/Extensions/IPTVPlayerPro"
+[ "$TMP" = "$LOCAL_TAR" ] || rm -f "$TMP"
+say "Installed successfully: $TARGET_DIR"
 
 if [ "$NO_RESTART" = "1" ]; then
     say "Restart Enigma2 manually: Menu > Standby & Restart > Restart GUI"
@@ -130,3 +120,4 @@ else
 fi
 
 say "Done. Open: Menu > Plugins > IPTV Player Pro"
+
