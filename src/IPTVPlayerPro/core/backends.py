@@ -8,7 +8,9 @@
 
 from __future__ import absolute_import
 
+import os
 import re
+import threading
 
 from .epg import (EpgGuide, clean_epg_urls, derive_epg_url, now_next,
                   playlist_epg_urls)
@@ -54,6 +56,26 @@ def _page_size(settings):
     return max(50, min(1000, safe_int(settings.get("page_size"), 300)))
 
 
+# Parsing a large playlist takes seconds on a receiver, so the parsed
+# catalogue must survive the screen changes.  One backend instance is kept
+# per source and reused by every screen.
+_BACKENDS = {}
+_BACKEND_LOCK = threading.RLock()
+
+# One download at a time per source: the background preparation and a manual
+# reload must not fetch the same playlist twice.
+_REFRESH_LOCKS = {}
+
+
+def _refresh_lock(source_id):
+    with _BACKEND_LOCK:
+        lock = _REFRESH_LOCKS.get(source_id)
+        if lock is None:
+            lock = threading.RLock()
+            _REFRESH_LOCKS[source_id] = lock
+        return lock
+
+
 class BaseBackend(object):
     kind = ""
 
@@ -65,6 +87,48 @@ class BaseBackend(object):
         self.error = ""
         self._epg_guide = None
         self._epg_urls = []
+        self._cache_stamp = None
+
+    # ------------------------------------------------------------- freshness
+    def cache_stamp(self):
+        """Return a cheap signature of the cached catalogue file."""
+        try:
+            info = os.stat(self.store.cache_file(self.source_id))
+        except Exception:
+            return None
+        try:
+            stamp = int(info.st_mtime_ns)
+        except AttributeError:  # Python 2
+            stamp = int(info.st_mtime * 1000000)
+        return (stamp, int(info.st_size))
+
+    def mark_cache_stamp(self):
+        self._cache_stamp = self.cache_stamp()
+
+    def ensure_fresh(self):
+        """Drop the in-memory catalogue when the cache file changed.
+
+        The background preparation writes a new cache file.  The shared
+        backend must then re-read it instead of showing the old channels.
+        """
+        if not self.loaded:
+            return False
+        if self._cache_stamp is None:
+            self.mark_cache_stamp()
+            return False
+        if self.cache_stamp() != self._cache_stamp:
+            self.invalidate()
+            return True
+        return False
+
+    def invalidate(self):
+        """Forget the loaded catalogue so it is read from disk again."""
+        self.loaded = False
+        self.live = []
+        self.vod = []
+        self.series = []
+        self.channels = []
+        self._cache_stamp = None
 
     # ------------------------------------------------------------------ api
     @property
@@ -247,6 +311,10 @@ class M3UBackend(BaseBackend):
     def refresh(self, force=False, progress=None):
         if not force and self.loaded:
             return True
+        with _refresh_lock(self.source_id):
+            return self._refresh_locked(force, progress)
+
+    def _refresh_locked(self, force=False, progress=None):
         payload = None if force else self.store.load_cache(self.source_id)
         if payload and self._cache_usable(payload) and payload.get("kind") == "m3u":
             self._apply(payload)
@@ -324,6 +392,7 @@ class M3UBackend(BaseBackend):
         for entry in self.series:
             self._series_index[entry.get("id")] = entry
         self.loaded = True
+        self.mark_cache_stamp()
 
     def _ensure_live_groups(self):
         if not self._live_groups and self.live:
@@ -524,6 +593,10 @@ class MagBackend(BaseBackend):
     def refresh(self, force=False, progress=None):
         if self.loaded and not force:
             return True
+        with _refresh_lock(self.source_id):
+            return self._refresh_locked(force, progress)
+
+    def _refresh_locked(self, force=False, progress=None):
         payload = None if force else self.store.load_cache(self.source_id)
         if payload and payload.get("kind") == "mag" and self._cache_usable(payload):
             self._apply(payload)
@@ -608,6 +681,7 @@ class MagBackend(BaseBackend):
         self._cache_ts = safe_int(payload.get("ts")) or now()
         self._rebuild_indexes()
         self.loaded = True
+        self.mark_cache_stamp()
 
     def _ensure_live_groups(self):
         if not self._live_groups and self.channels:
@@ -1095,10 +1169,47 @@ def create_backend(source, store):
 
 
 def active_backend(store):
+    """Return the shared backend of the active source.
+
+    The instance is cached so the parsed catalogue stays in memory between
+    screens.  Re-creating it would re-read and re-parse the playlist file on
+    every navigation, which is very slow on a receiver.
+    """
     source = store.active_source()
     if not source:
         return None
-    return create_backend(source, store)
+    return shared_backend(source, store)
+
+
+def shared_backend(source, store):
+    """Return (and cache) the backend instance of *source*."""
+    key = (to_text(source.get("id")), to_text(source.get("type")),
+           to_text(source.get("url")), to_text(source.get("mac")))
+    with _BACKEND_LOCK:
+        backend = _BACKENDS.get(key)
+        if backend is None:
+            backend = create_backend(source, store)
+            _BACKENDS[key] = backend
+        else:
+            # The store reloads its JSON, so the source dict is a new object.
+            backend.source = source
+            backend.store = store
+            backend.settings = store.settings
+            backend.source_id = source.get("id") or ""
+        return backend
+
+
+def reset_shared_backends(source_id=None):
+    """Forget cached backends (after a cache clear or a source change)."""
+    with _BACKEND_LOCK:
+        if source_id is None:
+            _BACKENDS.clear()
+            _REFRESH_LOCKS.clear()
+            return
+        for key in list(_BACKENDS.keys()):
+            if to_text(key[0]) == to_text(source_id):
+                _BACKENDS.pop(key, None)
+        _REFRESH_LOCKS.pop(to_text(source_id), None)
 
 
 def source_label(source):

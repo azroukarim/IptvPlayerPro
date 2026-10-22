@@ -107,6 +107,10 @@ class MainMenu(AsyncScreen):
         set_language(self.store.settings.get("language") or "ar")
         prefetch.reconcile(self.store)
         self.backend = active_backend(self.store)
+        try:
+            self.backend.ensure_fresh()
+        except Exception:
+            pass
         self._prefetch_state = self._prefetch_info_state()
         self.apply_language()
         self.ensure_web_interface()
@@ -223,6 +227,10 @@ class MainMenu(AsyncScreen):
     def sources_closed(self, result=None):
         # The source may have been edited or deleted, so always rebuild.
         self.backend = active_backend(self.store)
+        try:
+            self.backend.ensure_fresh()
+        except Exception:
+            pass
         self.update_status()
         if result == "zapped":
             self.close()

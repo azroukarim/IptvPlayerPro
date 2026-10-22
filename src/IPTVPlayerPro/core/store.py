@@ -456,6 +456,11 @@ class Store(object):
         return max(0, now() - ts)
 
     def clear_cache(self, source_id=None):
+        try:
+            from .backends import reset_shared_backends
+            reset_shared_backends(source_id)
+        except Exception:
+            pass
         if source_id:
             for path in (self.cache_file(source_id), self.epg_file(source_id)):
                 try:

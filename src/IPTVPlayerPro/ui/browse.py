@@ -61,14 +61,16 @@ class BackendScreen(ListScreen):
             info_box(self.session, _("No active playlist") + u"\n" + _("Open the server list and add an M3U playlist or a MAG portal first."))
             self.close()
             return
+        try:
+            # The background preparation may have written a new cache file.
+            self.backend.ensure_fresh()
+        except Exception:
+            pass
         if self.backend.is_ready():
             self.build()
             return
-        source = self.store.active_source() or {}
-        source_id = to_text(source.get("id"))
-        if source_id and prefetch.running(source_id):
-            self._wait_for_prefetch(source_id, reload=False)
-            return
+        # The background preparation must never delay the browser: the live
+        # channels are already in the cache and are loaded right away.
         self._load_backend()
 
     def _load_backend(self):
@@ -89,6 +91,7 @@ class BackendScreen(ListScreen):
         )
 
     def _wait_for_prefetch(self, source_id, reload=False):
+        """Wait for the background preparation before opening a VOD list."""
         self._prefetch_reload = reload
         self.status_text(prefetch.status_text(source_id) or _("Preparing ..."))
         self.run_async(
@@ -100,8 +103,16 @@ class BackendScreen(ListScreen):
                 prefetch.status_text(source_id) or _("Preparing ...")),
         )
 
+    def waits_for_prefetch(self):
+        """Only the movies and series lists wait for the preparation."""
+        return False
+
     def _prepare_reloaded_backend(self):
         self.backend = active_backend(self.store)
+        try:
+            self.backend.ensure_fresh()
+        except Exception:
+            pass
         self._epg_retry_at = 0
 
     def _prefetch_wait_done(self, _result):
