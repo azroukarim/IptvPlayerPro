@@ -275,6 +275,7 @@ class LiveBrowserScreen(BackendScreen):
         self.focus = "categories"
         self._channel_request = 0
         self._channel_source = []
+        self._row_offset = 0
         self._icon_start = 0
         self._icon_end = 0
 
@@ -498,6 +499,7 @@ class LiveBrowserScreen(BackendScreen):
             page = max(1, min(self.page, pages))
         start = (page - 1) * size
         self.page = page
+        self._row_offset = start
         self.browser_items = items[start:start + size]
         target_index = max(0, target - start)
         if target_index >= len(self.browser_items):
@@ -543,7 +545,7 @@ class LiveBrowserScreen(BackendScreen):
             if self._icon_start <= index < self._icon_end:
                 icon = self._channel_icon(item)
             entries.append(channel_entry(
-                412, 52, item.get("number") or index + 1,
+                412, 52, item.get("number") or (self._row_offset + index + 1),
                 item.get("name") or u"", icon=icon,
                 favorite=favorite,
             ))
@@ -561,9 +563,10 @@ class LiveBrowserScreen(BackendScreen):
         self.update_headers()
         self.update_preview()
         if self.browser_items:
-            if len(self.browser_items) < self.total:
+            loaded = self.loaded_count()
+            if loaded < self.total:
                 self.status_text(u"{0} / {1} {2}".format(
-                    len(self.browser_items), self.total, _("channels")))
+                    loaded, self.total, _("channels")))
             else:
                 self.status_text(u"{0} {1}".format(self.total, _("channels")))
         else:
@@ -574,6 +577,7 @@ class LiveBrowserScreen(BackendScreen):
         self._channel_source = []
         self.total = 0
         self.browser_items = []
+        self._row_offset = 0
         self._icon_start = 0
         self._icon_end = 0
         try:
@@ -654,16 +658,20 @@ class LiveBrowserScreen(BackendScreen):
             return False
         return index >= len(self.browser_items)
 
+    def loaded_count(self):
+        return min(self.total, self._row_offset + len(self.browser_items))
+
     def current(self):
         return self.selected_channel()
 
     def update_headers(self):
         cat_prefix = u">  " if self.focus == "categories" else u""
         ch_prefix = u">  " if self.focus == "channels" else u""
-        if len(self.browser_items) < self.total:
-            channel_count = u"{0}/{1}".format(len(self.browser_items), self.total)
+        loaded = self.loaded_count()
+        if loaded < self.total:
+            channel_count = u"{0}/{1}".format(loaded, self.total)
         else:
-            channel_count = u"{0}".format(self.total or len(self.browser_items))
+            channel_count = u"{0}".format(self.total or loaded)
         self["catHeader"].setText(u"{0}{1}  ({2})".format(
             cat_prefix, _("Categories"), len(self.categories)))
         self["chHeader"].setText(u"{0}{1}  ({2})".format(
@@ -692,7 +700,7 @@ class LiveBrowserScreen(BackendScreen):
             self["previewKind"].setText(_("Channels"))
             self["previewName"].setText(_("Load more ..."))
             self["previewMeta"].setText(u"{0} / {1} {2}".format(
-                len(self.browser_items), self.total, _("channels")))
+                self.loaded_count(), self.total, _("channels")))
             self["previewUrl"].setText(u"")
             self["previewFav"].setText(u"")
             self["previewLogo"].instance.setPixmap(pixmap("more.png"))

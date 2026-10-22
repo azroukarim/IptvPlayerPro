@@ -490,6 +490,8 @@ def main():
         assert len(paged.browser_items) == 100
         assert paged.page == 2
         assert paged["channels"].getSelectedIndex() == 50
+        assert any(getattr(entry, "text", None) == "51"
+                   for entry in paged["channels"].l.items[50])
         paged["channels"].setCurrentIndex(100)
         paged.key_ok()
         assert len(paged.browser_items) == 125
