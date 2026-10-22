@@ -350,6 +350,9 @@ class LiveBrowserScreen(BackendScreen):
 
         self.onLayoutFinish.append(self._layout_ready)
         self.onShown.append(self.shown_ready)
+        # Returning from a dialog re-shows the screen.  Re-apply the preview
+        # immediately instead of waiting for the keep-alive timer.
+        self.onShow.append(self._preview_shown)
         # Restore the main video plane before the screen and its video widget
         # are destroyed, otherwise some Broadcom images leave the selected
         # service in the small preview rectangle.
@@ -504,18 +507,11 @@ class LiveBrowserScreen(BackendScreen):
             self._log_preview("no video widget")
             return
 
-        left, top, width, height = LIVE_VIDEO_RECT
-        # Fallback for images where the hidden widget did not receive its
-        # skin size event.  move()/resize() are public eWidget methods and
-        # make eVideoWidget recalculate its destination.
-        try:
-            widget.move(left, top)
-        except Exception:
-            pass
-        try:
-            widget.resize(width, height)
-        except Exception:
-            pass
+        # Show the widget so the OSD keeps its video cut-out.  Do not move or
+        # resize it here: the skin engine has already scaled its rectangle to
+        # the real desktop, while LIVE_VIDEO_RECT is in 1280x720 skin
+        # coordinates.  Moving it with skin coordinates would shift the
+        # cut-out on FHD/UHD desktops.
         try:
             widget.show()
         except Exception:
@@ -594,6 +590,10 @@ class LiveBrowserScreen(BackendScreen):
                 handle.close()
         except Exception:
             pass
+
+    def _preview_shown(self):
+        if self._preview_active:
+            self._apply_preview_video()
 
     def _show_preview_video(self):
         self._preview_active = True
