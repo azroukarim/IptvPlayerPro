@@ -176,6 +176,7 @@ def parse_playlist(text, base_url=""):
             "opts": option_text,
             "duration": current.get("duration") or "",
             "tvg_id": (current.get("attrs") or {}).get("tvg-id") or "",
+            "tvg_name": (current.get("attrs") or {}).get("tvg-name") or "",
         }
         if kind == "series":
             title, season, episode = _series_parts(name)

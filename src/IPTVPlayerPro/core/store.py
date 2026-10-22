@@ -18,7 +18,7 @@ from .util import (atomic_write, ensure_dir, md5, now, read_json, safe_int,
 _STORE_LOCK = threading.RLock()
 
 
-VERSION = "1.2.2"
+VERSION = "1.3.0"
 
 CONFIG_CANDIDATES = [
     "/etc/enigma2/iptvplayerpro",
@@ -196,6 +196,7 @@ class Store(object):
             source.setdefault("url", "")
             source.setdefault("mac", "")
             source.setdefault("ua", "")
+            source.setdefault("epg_url", "")
             source.setdefault("favorites", [])
             if not isinstance(source["favorites"], list):
                 source["favorites"] = []
@@ -371,6 +372,7 @@ class Store(object):
             "url": url,
             "mac": mac,
             "ua": ua,
+            "epg_url": "",
             "favorites": [],
             "info": {},
             "updated": 0,
@@ -429,6 +431,9 @@ class Store(object):
     def cache_file(self, source_id):
         return os.path.join(self.cache_dir, "cache_{0}.json".format(source_id))
 
+    def epg_file(self, source_id):
+        return os.path.join(self.cache_dir, "epg_{0}.json".format(source_id))
+
     def load_cache(self, source_id):
         payload = read_json(self.cache_file(source_id), None)
         if not isinstance(payload, dict):
@@ -451,13 +456,15 @@ class Store(object):
 
     def clear_cache(self, source_id=None):
         if source_id:
-            try:
-                os.remove(self.cache_file(source_id))
-            except Exception:
-                pass
+            for path in (self.cache_file(source_id), self.epg_file(source_id)):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
             return
         for name in os.listdir(self.cache_dir) if os.path.isdir(self.cache_dir) else []:
-            if name.startswith("cache_") and name.endswith(".json"):
+            if ((name.startswith("cache_") or name.startswith("epg_"))
+                    and name.endswith(".json")):
                 try:
                     os.remove(os.path.join(self.cache_dir, name))
                 except Exception:
@@ -467,6 +474,20 @@ class Store(object):
                 shutil.rmtree(folder)
             except Exception:
                 pass
+
+    def clear_epg_cache(self, source_id=None):
+        if source_id:
+            try:
+                os.remove(self.epg_file(source_id))
+            except Exception:
+                pass
+            return
+        for name in os.listdir(self.cache_dir) if os.path.isdir(self.cache_dir) else []:
+            if name.startswith("epg_") and name.endswith(".json"):
+                try:
+                    os.remove(os.path.join(self.cache_dir, name))
+                except Exception:
+                    pass
 
     def logo_file(self, url, kind="logo"):
         folder = self.poster_dir if kind == "poster" else self.logo_dir

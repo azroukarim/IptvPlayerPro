@@ -9,6 +9,7 @@ from Screens.ChoiceBox import ChoiceBox
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 
 from ..core.backends import create_backend, source_summary
+from ..core.epg import clean_epg_urls
 from ..core.i18n import _
 from ..core.mag import is_valid_mac, normalize_mac, normalize_portal
 from ..core.util import human_age, human_expiry, is_expired, to_text
@@ -87,6 +88,7 @@ class SourcesScreen(ListScreen):
         if source.get("type") == "mag":
             options.append((_("Change MAC"), "mac"))
         options += [
+            (_("Change EPG URL"), "epg_url"),
             (_("Change user-agent"), "ua"),
             (_("Refresh now"), "refresh"),
             (_("Delete"), "delete"),
@@ -109,6 +111,9 @@ class SourcesScreen(ListScreen):
             self._ask(_("Change URL"), source.get("url") or "", lambda text: self._save_url(source_id, text))
         elif action == "mac":
             self._ask(_("MAC address"), source.get("mac") or "00:1A:79:", lambda text: self._save_mac(source_id, text))
+        elif action == "epg_url":
+            self._ask(_("EPG URL (optional)"), source.get("epg_url") or "",
+                      lambda text: self._save_epg_url(source_id, text))
         elif action == "ua":
             self._ask(_("User-Agent (optional)"), source.get("ua") or "", lambda text: self._save_ua(source_id, text))
         elif action == "refresh":
@@ -159,6 +164,21 @@ class SourcesScreen(ListScreen):
             return
         self.store.update_source(source_id, mac=mac)
         self.store.clear_cache(source_id)
+        self.changed = True
+        self.rebuild()
+        info_box(self.session, _("Saved"))
+
+    def _save_epg_url(self, source_id, text):
+        if text is None:
+            return
+        value = to_text(text).strip()
+        if value and not clean_epg_urls(value):
+            info_box(self.session, _("Invalid URL") + u"\n" + _("The address must start with http:// or https://"))
+            self._ask(_("EPG URL (optional)"), value,
+                      lambda again: self._save_epg_url(source_id, again))
+            return
+        self.store.update_source(source_id, epg_url=value)
+        self.store.clear_epg_cache(source_id)
         self.changed = True
         self.rebuild()
         info_box(self.session, _("Saved"))

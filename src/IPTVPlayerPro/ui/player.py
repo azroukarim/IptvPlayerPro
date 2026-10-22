@@ -12,6 +12,7 @@ from Components.Label import Label
 from Components.Pixmap import Pixmap
 from Screens.Screen import Screen
 
+from ..core.epg import clock_text, now_next
 from ..core.i18n import _
 from ..core.util import safe_int, to_text
 from .base import pixmap
@@ -32,11 +33,13 @@ class LivePlayerScreen(Screen):
 
     skin = PLAYER_SKIN
 
-    def __init__(self, session, item, logo=None):
+    def __init__(self, session, item, logo=None, programmes=None):
         Screen.__init__(self, session)
         self.skinName = "IPTVProPlayer"
         self.item = item or {}
         self._logo = logo
+        self._programmes = programmes or []
+        self._epg_signature = None
         self._info_visible = True
         self._clock_timer = None
         self._info_timer = None
@@ -52,6 +55,8 @@ class LivePlayerScreen(Screen):
         self["channelMeta"] = Label()
         self["liveBg"] = Pixmap()
         self["liveLabel"] = Label()
+        self["epgNow"] = Label()
+        self["epgNext"] = Label()
         self["volumeText"] = Label()
         self["hint"] = Label()
 
@@ -100,6 +105,7 @@ class LivePlayerScreen(Screen):
             _("OK info  \u2022  LEFT/RIGHT volume  \u2022  YELLOW mute  \u2022  UP/BACK back"))
         self.update_clock()
         self.update_volume()
+        self.update_epg()
         self._start_info_timer()
 
     def _set_visible(self, name, visible):
@@ -118,11 +124,13 @@ class LivePlayerScreen(Screen):
         self._info_visible = visible
         for name in ("topBar", "logo", "title", "clock", "bottomBar",
                      "logoBg", "channelLogo", "channelName", "channelMeta",
-                     "liveBg", "liveLabel", "volumeText", "hint"):
+                     "liveBg", "liveLabel", "epgNow", "epgNext", "volumeText",
+                     "hint"):
             self._set_visible(name, visible)
         if visible:
             self.update_clock()
             self.update_volume()
+            self.update_epg()
             self._start_info_timer()
         else:
             self._stop_info_timer()
@@ -194,10 +202,42 @@ class LivePlayerScreen(Screen):
     def _tick(self):
         self.update_clock()
         self.update_volume()
+        self.update_epg()
 
     def update_clock(self):
         try:
             self["clock"].setText(to_text(time.strftime("%I:%M %p")))
+        except Exception:
+            pass
+
+    # ----------------------------------------------------------------- epg
+    def set_programmes(self, programmes):
+        self._programmes = programmes or []
+        self._epg_signature = None
+        self.update_epg()
+
+    def update_epg(self):
+        current, upcoming = now_next(self._programmes)
+        now_text = u""
+        next_text = u""
+        if current is not None:
+            now_text = u"{0} - {1}  {2}".format(
+                clock_text(current[0]), clock_text(current[1]),
+                to_text(current[2]).replace(u"\n", u" "))
+        if upcoming is not None:
+            next_text = u"{0}  {1}  {2}".format(
+                _("Next"), clock_text(upcoming[0]),
+                to_text(upcoming[2]).replace(u"\n", u" "))
+        signature = (now_text, next_text)
+        if signature == self._epg_signature:
+            return
+        self._epg_signature = signature
+        try:
+            self["epgNow"].setText(now_text)
+        except Exception:
+            pass
+        try:
+            self["epgNext"].setText(next_text)
         except Exception:
             pass
 

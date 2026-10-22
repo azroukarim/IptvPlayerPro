@@ -3,12 +3,14 @@
 
 from __future__ import absolute_import, print_function
 
+import calendar
 import json
 import os
 import shutil
 import sys
 import tempfile
 import threading
+import time
 
 try:
     from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -21,6 +23,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from IPTVPlayerPro.core.m3u import build_catalogue, parse_playlist  # noqa: E402
+from IPTVPlayerPro.core.epg import (derive_epg_url, parse_xmltv_time,  # noqa: E402
+                                    playlist_epg_urls)
 from IPTVPlayerPro.core.i18n import set_language  # noqa: E402
 from IPTVPlayerPro.core.mag import MagClient, normalize_mac, normalize_portal  # noqa: E402
 from IPTVPlayerPro.core.store import Store  # noqa: E402
@@ -272,12 +276,117 @@ def test_mag(tmp):
     server.shutdown()
 
 
+def test_epg(tmp):
+    print("[epg]")
+    check(parse_xmltv_time("20261022120000 +0200") ==
+          calendar.timegm((2026, 10, 22, 10, 0, 0, 0, 0, 0)), "XMLTV timezone")
+    check(parse_xmltv_time("20261022120000 +02:00") ==
+          calendar.timegm((2026, 10, 22, 10, 0, 0, 0, 0, 0)), "XMLTV timezone colon")
+    check(derive_epg_url("http://portal.test/get.php?username=u&password=p&type=m3u_plus") ==
+          "http://portal.test/xmltv.php?username=u&password=p", "Xtream EPG URL derived")
+
+    moment = int(time.time())
+    start = moment - 600
+    stop = moment + 3000
+    next_stop = stop + 3600
+
+    def xmltv_time(value):
+        return time.strftime("%Y%m%d%H%M%S +0000", time.gmtime(value))
+
+    served = {}
+
+    class EpgHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            path = urlparse(self.path).path
+            if path == "/playlist.m3u":
+                body = served["playlist"].encode("utf-8")
+            elif path == "/epg.xml":
+                body = served["epg"].encode("utf-8")
+            else:
+                body = b"not found"
+                self.send_response(404)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/x-mpegurl" if path.endswith(".m3u") else "application/xml")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), EpgHandler)
+    port = server.server_address[1]
+    base = "http://127.0.0.1:{0}".format(port)
+    epg_url = base + "/epg.xml"
+    served["playlist"] = u"""#EXTM3U url-tvg="{0}"
+#EXTINF:-1 tvg-id="news1" tvg-name="News One" group-title="News",News One HD
+http://stream.example.com/live/news1.m3u8
+#EXTINF:-1 group-title="News",Name Match HD
+http://stream.example.com/live/match.m3u8
+""".format(epg_url)
+    served["epg"] = u"""<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <channel id="news1"><display-name>News One</display-name></channel>
+  <channel id="sports9"><display-name>Name Match</display-name></channel>
+  <programme start="{0}" stop="{1}" channel="news1">
+    <title lang="ar">نشرة الأخبار</title>
+  </programme>
+  <programme start="{1}" stop="{2}" channel="news1">
+    <title>News Next</title>
+  </programme>
+  <programme start="{0}" stop="{1}" channel="sports9">
+    <title>Match Live</title>
+  </programme>
+</tv>
+""".format(xmltv_time(start), xmltv_time(stop), xmltv_time(next_stop))
+
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+
+    work = tempfile.mkdtemp(prefix="iptvpro-epg-")
+    try:
+        store = Store(config_dir=work, cache_dir=work)
+        store.set_setting("timeout", 5)
+        source = store.new_source("m3u", "EPG Test", base + "/playlist.m3u", "", "")
+        backend = M3UBackend(source, store)
+        backend.refresh(force=True)
+        check(backend.epg_urls() == [epg_url], "EPG URL from M3U header")
+        check(backend.refresh_epg(force=True), "EPG downloaded")
+        items = backend.live_items("all")
+        news = [item for item in items if item.get("tvg_id") == "news1"][0]
+        match = [item for item in items if "Match" in item.get("name", "")][0]
+        current, upcoming = backend.epg_now_next(news, at=moment)
+        check(current is not None and current[2] == u"نشرة الأخبار", "current programme")
+        check(upcoming is not None and upcoming[2] == "News Next", "next programme")
+        current, upcoming = backend.epg_now_next(match, at=moment)
+        check(current is not None and current[2] == "Match Live", "EPG name fallback")
+        guide = backend.epg_guide()
+        check(guide.programmes_for(news), "programmes returned")
+        check(os.path.exists(store.epg_file(source.get("id"))), "EPG cache written")
+
+        reloaded = M3UBackend(store.get_source(source.get("id")), store)
+        reloaded.refresh()
+        current, upcoming = reloaded.epg_now_next(
+            [item for item in reloaded.live_items("all") if item.get("tvg_id") == "news1"][0],
+            at=moment)
+        check(current is not None and current[2] == u"نشرة الأخبار", "EPG cache reloaded")
+    finally:
+        server.shutdown()
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="iptvpro-test-")
     try:
         test_playlist()
         test_store(tmp)
         test_mag(tmp)
+        test_epg(tmp)
         print("\nAll core tests passed.")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

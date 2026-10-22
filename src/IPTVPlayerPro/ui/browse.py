@@ -4,6 +4,7 @@
 from __future__ import absolute_import
 
 import os
+import time
 
 from enigma import eRect, eTimer
 
@@ -14,6 +15,7 @@ from Components.VideoWindow import VideoWindow
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 
 from ..core.backends import source_label
+from ..core.epg import clock_text
 from ..core.i18n import _
 from ..core.util import human_count, safe_int, to_text
 from .base import (AsyncScreen, ListScreen, LiveList, category_entry,
@@ -152,6 +154,7 @@ class BackendScreen(ListScreen):
 
     def _reloaded(self, _result):
         self.status_text(u"")
+        self._epg_retry_at = 0
         self.build()
 
 
@@ -299,6 +302,11 @@ class LiveBrowserScreen(BackendScreen):
         self._mini_key = None
         self._mini_loading_key = None
         self._fullscreen_pending_key = None
+        self._epg_loading = False
+        self._epg_retry_at = 0
+        self._epg_timer = None
+        self._player_screen = None
+        self._player_item = None
 
         self["bg"] = Pixmap()
         self["header"] = Pixmap()
@@ -328,6 +336,8 @@ class LiveBrowserScreen(BackendScreen):
         self["previewLogo"] = Pixmap()
         self["previewName"] = Label()
         self["previewMeta"] = Label()
+        self["previewEpgNow"] = Label()
+        self["previewEpgNext"] = Label()
         self["previewUrl"] = Label()
         self["previewFav"] = Label()
         self["playBg"] = Pixmap()
@@ -365,6 +375,7 @@ class LiveBrowserScreen(BackendScreen):
         # are destroyed, otherwise some Broadcom images leave the selected
         # service in the small preview rectangle.
         self.onClose.append(self.stop_preview)
+        self.onClose.append(self._stop_epg_timer)
         # Clear the page rows while the screen is being destroyed: doing this
         # immediately after playService() can disturb the freshly started
         # service on some images.
@@ -392,6 +403,8 @@ class LiveBrowserScreen(BackendScreen):
         self["previewKind"].setText(_("CHANNEL PREVIEW"))
         self["previewName"].setText(_("Live TV"))
         self["previewMeta"].setText(u"")
+        self["previewEpgNow"].setText(u"")
+        self["previewEpgNext"].setText(u"")
         self["previewUrl"].setText(u"")
         self["previewFav"].setText(u"")
         self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
@@ -410,6 +423,7 @@ class LiveBrowserScreen(BackendScreen):
         self.update_headers()
         self.apply_focus()
         self.update_preview()
+        self._start_epg_timer()
         # The video widget is part of the widget tree but must stay inactive
         # until a channel is explicitly played in the mini TV.
         self._restore_fullscreen_video()
@@ -684,6 +698,7 @@ class LiveBrowserScreen(BackendScreen):
             self.category_id = "all" if "all" in ids else (ids[0] if ids else "")
         self.render_categories()
         self.load_channels()
+        self._maybe_load_epg()
 
     def render_categories(self):
         entries = []
@@ -981,18 +996,24 @@ class LiveBrowserScreen(BackendScreen):
                 pass
         self._restore_fullscreen_video()
         logo = self._channel_icon(item)
+        self._player_item = item
         try:
-            self.session.openWithCallback(
-                self._fullscreen_closed, LivePlayerScreen, item, logo)
+            self._player_screen = self.session.openWithCallback(
+                self._fullscreen_closed, LivePlayerScreen, item, logo,
+                self._epg_programmes(item))
         except Exception as error:  # noqa: BLE001
             # If the player screen cannot be created, return to the mini TV
             # instead of leaving the user on a full-screen picture with the
             # browser chrome still visible.
+            self._player_screen = None
+            self._player_item = None
             if self._preview_active:
                 self._show_preview_video()
             self.show_error(error)
 
     def _fullscreen_closed(self, result=None):
+        self._player_screen = None
+        self._player_item = None
         if self._preview_active and getattr(self, "_alive", True):
             self._show_preview_video()
 
@@ -1076,6 +1097,143 @@ class LiveBrowserScreen(BackendScreen):
         else:
             self["searchText"].setText(u"GREEN  " + _("Search channels"))
 
+    # ------------------------------------------------------------------ epg
+    def _epg_programmes(self, item):
+        method = getattr(self.backend, "epg_programmes", None)
+        if method is None:
+            return []
+        try:
+            return method(item) or []
+        except Exception:
+            return []
+
+    def _epg_now_next(self, item):
+        method = getattr(self.backend, "epg_now_next", None)
+        if method is None:
+            return None, None
+        try:
+            return method(item)
+        except Exception:
+            return None, None
+
+    def _set_preview_epg(self, item):
+        current, upcoming = self._epg_now_next(item) if item is not None else (None, None)
+        now_text = u""
+        next_text = u""
+        if current is not None:
+            now_text = u"{0} - {1}  {2}".format(
+                clock_text(current[0]), clock_text(current[1]),
+                to_text(current[2]).replace(u"\n", u" "))
+        if upcoming is not None:
+            next_text = u"{0}  {1}  {2}".format(
+                _("Next"), clock_text(upcoming[0]),
+                to_text(upcoming[2]).replace(u"\n", u" "))
+        self["previewEpgNow"].setText(now_text)
+        self["previewEpgNext"].setText(next_text)
+        self._set_visible("previewEpgNow", bool(now_text))
+        self._set_visible("previewEpgNext", bool(next_text))
+        self._set_visible("previewUrl", not (now_text or next_text))
+
+    def _backend_epg_urls(self):
+        method = getattr(self.backend, "epg_urls", None)
+        if method is None:
+            return []
+        try:
+            return method() or []
+        except Exception:
+            return []
+
+    def _backend_epg_stale(self):
+        method = getattr(self.backend, "epg_stale", None)
+        if method is None:
+            return False
+        try:
+            return bool(method())
+        except Exception:
+            return False
+
+    def _maybe_load_epg(self):
+        if self.backend is None or self._epg_loading:
+            return
+        if time.time() < self._epg_retry_at:
+            return
+        if not self._backend_epg_urls():
+            return
+        if not self._backend_epg_stale():
+            return
+        self._epg_loading = True
+        timeout = safe_int(self.store.settings.get("timeout"), 20)
+        limit = max(120, timeout * 4 + 30)
+        self._log_epg("epg refresh start")
+        try:
+            self.run_async(
+                lambda: self.backend.refresh_epg(force=True),
+                self._epg_loaded,
+                self._epg_failed,
+                timeout=limit,
+            )
+        except Exception as error:  # noqa: BLE001
+            self._epg_loading = False
+            self._epg_failed(error)
+
+    def _epg_loaded(self, _result):
+        self._epg_loading = False
+        self._epg_retry_at = 0 if _result else time.time() + 300
+        self._log_epg("epg refresh finished")
+        if not getattr(self, "_alive", True):
+            return
+        self.update_preview()
+        setter = getattr(self._player_screen, "set_programmes", None)
+        if setter is not None and self._player_item is not None:
+            try:
+                setter(self._epg_programmes(self._player_item))
+            except Exception:
+                pass
+
+    def _epg_failed(self, error):
+        self._epg_loading = False
+        self._epg_retry_at = time.time() + 300
+        self._log_epg("epg refresh failed: {0}".format(to_text(error)))
+
+    def _start_epg_timer(self):
+        if self._epg_timer is None:
+            try:
+                self._epg_timer = eTimer()
+                self._epg_timer.callback.append(self._epg_tick)
+            except Exception:
+                self._epg_timer = None
+                return
+        try:
+            self._epg_timer.start(30000, False)
+        except Exception:
+            pass
+
+    def _stop_epg_timer(self):
+        if self._epg_timer is not None:
+            try:
+                self._epg_timer.stop()
+            except Exception:
+                pass
+            self._epg_timer = None
+
+    def _epg_tick(self):
+        if not getattr(self, "_alive", True):
+            return
+        self.update_preview()
+        self._maybe_load_epg()
+
+    def _log_epg(self, message):
+        try:
+            text = u"{0} {1}\n".format(
+                time.strftime("%Y-%m-%d %H:%M:%S"), to_text(message))
+            handle = open("/tmp/iptvplayerpro-epg.log", "ab")
+            try:
+                handle.write(text.encode("utf-8"))
+            finally:
+                handle.close()
+        except Exception:
+            pass
+
     def update_preview(self):
         item = self.selected_channel()
         category = self.selected_category()
@@ -1084,6 +1242,7 @@ class LiveBrowserScreen(BackendScreen):
             self["previewName"].setText(_("Load more ..."))
             self["previewMeta"].setText(u"{0} / {1} {2}".format(
                 self.loaded_count(), self.total, _("channels")))
+            self._set_preview_epg(None)
             self["previewUrl"].setText(u"")
             self["previewFav"].setText(u"")
             self["previewLogo"].instance.setPixmap(pixmap("more.png"))
@@ -1095,6 +1254,7 @@ class LiveBrowserScreen(BackendScreen):
             self["previewKind"].setText(_("LIVE TV"))
             self["previewName"].setText(to_text(name))
             self["previewMeta"].setText(_("No channels"))
+            self._set_preview_epg(None)
             self["previewUrl"].setText(u"")
             self["previewFav"].setText(u"")
             self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
@@ -1115,6 +1275,7 @@ class LiveBrowserScreen(BackendScreen):
         self["previewKind"].setText(_("CHANNEL PREVIEW"))
         self["previewName"].setText(item.get("name") or u"")
         self["previewMeta"].setText(u"  \u2022  ".join(meta))
+        self._set_preview_epg(item)
         url = to_text(item.get("url") or item.get("cmd") or u"")
         if len(url) > 62:
             url = url[:59] + u"..."

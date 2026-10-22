@@ -12,6 +12,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -167,9 +168,16 @@ def _build_components():
     class Label(object):
         def __init__(self):
             self.text = ""
+            self.visible = True
 
         def setText(self, text):
             self.text = text
+
+        def show(self):
+            self.visible = True
+
+        def hide(self):
+            self.visible = False
 
     label.Label = Label
 
@@ -588,12 +596,26 @@ def main():
             def resolve(self, item):
                 return item["url"]
 
+            def epg_now_next(self, item, at=None):
+                moment = int(time.time())
+                return ([moment - 600, moment + 1800, "News Now"],
+                        [moment + 1800, moment + 3600, "News Next"])
+
+            def epg_programmes(self, item):
+                current, upcoming = self.epg_now_next(item)
+                return [current, upcoming]
+
         live = LiveBrowserScreen(session, store, FakeBackend())
         live._layout_ready()
         live.build()
         assert live["categories"].l.items
         assert live["channels"].l.items
         assert live["previewName"].text
+        assert "News Now" in live["previewEpgNow"].text
+        assert "News Next" in live["previewEpgNext"].text
+        assert live["previewUrl"].visible is False
+        assert live._epg_timer is not None and live._epg_timer.running
+        assert live._epg_timer.interval == 30000
         live.key_right()
         assert live.focus == "channels"
 
@@ -723,12 +745,14 @@ def main():
         assert session.opened
         live.doClose()
         assert live._preview_active is False
+        assert live._epg_timer is None
 
         import xml.etree.ElementTree as ET
         from IPTVPlayerPro.ui.skins import LIVE_SKIN, PLAYER_SKIN
         skin_names = set(widget.get("name") for widget in ET.fromstring(LIVE_SKIN).findall("widget"))
         for name in ("bg", "header", "categories", "channels", "previewLogo",
-                     "previewName", "previewVideo", "playBg", "favBg", "hint"):
+                     "previewName", "previewVideo", "previewEpgNow",
+                     "previewEpgNext", "playBg", "favBg", "hint"):
             assert name in skin_names, name
 
         player_skin = ET.fromstring(PLAYER_SKIN)
@@ -741,16 +765,23 @@ def main():
             for widget in player_skin.findall("widget"))
         for name in ("topBar", "logo", "title", "clock", "bottomBar", "logoBg",
                      "channelLogo", "channelName", "channelMeta", "liveBg",
-                     "liveLabel", "volumeText", "hint"):
+                     "liveLabel", "epgNow", "epgNext", "volumeText", "hint"):
             assert name in player_skin_names, name
 
+        moment = int(time.time())
         player = LivePlayerScreen(session, {
             "name": "News One", "group": "News", "number": 1,
-            "url": "http://example.test/one"}, browse_module.pixmap("channel.png"))
+            "url": "http://example.test/one"}, browse_module.pixmap("channel.png"),
+            [[moment - 600, moment + 1800, "News Now"],
+             [moment + 1800, moment + 3600, "News Next"]])
         player._layout_ready()
         assert player["channelName"].text == "News One"
         assert "News" in player["channelMeta"].text
         assert player["liveLabel"].text == "LIVE"
+        assert "News Now" in player["epgNow"].text
+        assert "News Next" in player["epgNext"].text
+        player.set_programmes([[moment - 600, moment + 1200, "Later Show"]])
+        assert "Later Show" in player["epgNow"].text
         assert player["hint"].text
         assert player["actions"].actions["up"] == player.key_up
         assert player["actions"].actions["cancel"] == player.key_back
@@ -764,6 +795,8 @@ def main():
         assert player._info_timer.single is True
         player._hide_info()
         assert player["topBar"].visible is False
+        assert player["epgNow"].visible is False
+        assert player["epgNext"].visible is False
         assert player._info_timer is None
 
         player.toggle_info()

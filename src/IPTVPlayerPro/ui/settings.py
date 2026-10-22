@@ -135,7 +135,7 @@ class SettingsScreen(ListScreen):
     def activate(self, row):
         key = row.get("key")
         if key == "clear_cache":
-            yes_no(self.session, _("Clear the cached playlists and logos?"), self._clear_confirmed)
+            yes_no(self.session, _("Clear the cached playlists, EPG and logos?"), self._clear_confirmed)
             return
         if key == "about":
             info_box(self.session, u"{0}\n{1}\n\n{2}".format(

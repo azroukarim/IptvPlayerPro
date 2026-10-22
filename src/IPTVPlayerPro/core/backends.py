@@ -10,6 +10,8 @@ from __future__ import absolute_import
 
 import re
 
+from .epg import (EpgGuide, clean_epg_urls, derive_epg_url, now_next,
+                  playlist_epg_urls)
 from .i18n import _
 from .mag import (MagClient, MagError, is_valid_mac, normalize_mac,
                   normalize_portal, portal_logo)
@@ -39,6 +41,8 @@ class BaseBackend(object):
         self.settings = store.settings
         self.source_id = source.get("id") or ""
         self.error = ""
+        self._epg_guide = None
+        self._epg_urls = []
 
     # ------------------------------------------------------------------ api
     @property
@@ -120,6 +124,56 @@ class BaseBackend(object):
     def hide_adult(self):
         return bool(self.settings.get("hide_adult", True))
 
+    # ------------------------------------------------------------------ epg
+    def epg_urls(self):
+        """Return the configured XMLTV URLs for this source."""
+        manual = clean_epg_urls(self.source.get("epg_url") or u"")
+        if manual:
+            return manual
+        return list(self._epg_urls or [])
+
+    def epg_channel_refs(self):
+        return []
+
+    def epg_guide(self):
+        if self._epg_guide is None:
+            self._epg_guide = EpgGuide(self.store, self.source_id)
+        return self._epg_guide
+
+    def epg_stale(self):
+        if not self.epg_urls():
+            return False
+        return self.epg_guide().is_stale()
+
+    def epg_has_data(self):
+        return self.epg_guide().has_data()
+
+    def refresh_epg(self, force=False, progress=None):
+        """Download the guide when it is missing or older than its TTL."""
+        urls = self.epg_urls()
+        if not urls:
+            return False
+        guide = self.epg_guide()
+        if not force and not guide.is_stale():
+            return guide.has_data()
+        refs = self.epg_channel_refs()
+        if not refs:
+            return False
+        timeout = safe_int(self.settings.get("timeout"), 20)
+        guide.refresh(urls, refs, user_agent=to_text(self.source.get("ua")),
+                      timeout=timeout, progress=progress)
+        return guide.has_data()
+
+    def epg_programmes(self, item):
+        try:
+            return self.epg_guide().programmes_for(item)
+        except Exception:
+            return []
+
+    def epg_now_next(self, item, at=None):
+        current, upcoming = now_next(self.epg_programmes(item), at=at)
+        return current, upcoming
+
     def _category(self, cat_id, name, count=0):
         return {"id": to_text(cat_id), "name": name, "count": safe_int(count)}
 
@@ -152,6 +206,15 @@ class M3UBackend(BaseBackend):
             return True
         payload = None if force else self.store.load_cache(self.source_id)
         if payload and self._cache_usable(payload) and payload.get("kind") == "m3u":
+            if payload.get("epg_urls") is None:
+                # Cache written before EPG support: re-read the playlist once
+                # to discover its url-tvg header.  If the network is down, the
+                # old catalogue still remains usable without EPG.
+                try:
+                    return self.refresh(force=True)
+                except Exception:
+                    self._apply(payload)
+                    return True
             self._apply(payload)
             return True
         if progress:
@@ -173,9 +236,18 @@ class M3UBackend(BaseBackend):
         items = parse_playlist(text, base_url=url)
         if not items:
             raise NetError(_("The playlist is empty."))
-        catalogue = build_catalogue(items, meta={"kind": "m3u", "url": url})
+        epg_urls = playlist_epg_urls(text, base_url=url)
+        catalogue = build_catalogue(items, meta={
+            "kind": "m3u",
+            "url": url,
+            "epg_urls": epg_urls,
+        })
         self._apply(catalogue)
         self.store.save_cache(self.source_id, catalogue)
+        if force:
+            # Channel ids may have changed, so an old mapping cannot be trusted.
+            self.store.clear_epg_cache(self.source_id)
+            self._epg_guide = None
         self.store.update_info(
             self.source_id,
             channels=catalogue["counts"]["live"],
@@ -191,6 +263,7 @@ class M3UBackend(BaseBackend):
         self.live = payload.get("live") or []
         self.vod = payload.get("vod") or []
         self.series = payload.get("series") or []
+        self._epg_urls = payload.get("epg_urls") or []
         self._series_index = {}
         for entry in self.series:
             self._series_index[entry.get("id")] = entry
@@ -240,6 +313,23 @@ class M3UBackend(BaseBackend):
 
     def favorite_key(self, item):
         return favourite_key(item)
+
+    # ------------------------------------------------------------------ epg
+    def epg_urls(self):
+        urls = BaseBackend.epg_urls(self)
+        if urls:
+            return urls
+        derived = derive_epg_url(self.source.get("url"))
+        return [derived] if derived else []
+
+    def epg_channel_refs(self):
+        refs = []
+        for item in self.live:
+            refs.append({
+                "tvg_id": to_text(item.get("tvg_id")),
+                "names": [item.get("tvg_name"), item.get("name")],
+            })
+        return refs
 
     # ----------------------------------------------------------------- vod
     def vod_categories(self):
@@ -417,6 +507,9 @@ class MagBackend(BaseBackend):
             }
             self._apply(payload)
             self.store.save_cache(self.source_id, payload)
+            if force:
+                self.store.clear_epg_cache(self.source_id)
+                self._epg_guide = None
             info = client.account or {}
             expires = _expiry_of(info)
             status = "expired" if is_expired(expires) else ("active" if expires else "active")
@@ -493,6 +586,15 @@ class MagBackend(BaseBackend):
                     break
                 page += 1
         return items
+
+    def epg_channel_refs(self):
+        refs = []
+        for raw in self.channels:
+            refs.append({
+                "tvg_id": to_text(raw.get("tvg_id") or raw.get("xmltv_id") or ""),
+                "names": [raw.get("name"), raw.get("title")],
+            })
+        return refs
 
     def _channel(self, raw, group, kind):
         ident = to_text(raw.get("id") or raw.get("ch_id") or "")

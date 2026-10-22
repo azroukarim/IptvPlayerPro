@@ -25,6 +25,7 @@ except ImportError:  # Python 2
     from urlparse import parse_qs, urlsplit
 
 from ..core.backends import create_backend
+from ..core.epg import clean_epg_urls
 from ..core.mag import is_valid_mac, normalize_mac, normalize_portal
 from ..core.store import Store, VERSION
 from ..core.util import safe_int, to_bytes, to_text
@@ -123,6 +124,7 @@ def _source_view(source, active_id):
         "url": to_text(source.get("url")),
         "mac": to_text(source.get("mac")),
         "ua": to_text(source.get("ua")),
+        "epg_url": to_text(source.get("epg_url")),
         "active": source.get("id") == active_id,
         "status": to_text(info.get("status")),
         "expires": to_text(info.get("expires")),
@@ -364,6 +366,9 @@ class Handler(BaseHTTPRequestHandler):
 
         name = to_text(payload.get("name")).strip()
         ua = to_text(payload.get("ua")).strip()
+        epg_url = to_text(payload.get("epg_url")).strip()
+        if epg_url and not clean_epg_urls(epg_url):
+            raise ApiError(u"Enter a valid EPG URL", 400)
         activate = _truthy(payload.get("activate", 1))
 
         with context.lock:
@@ -371,6 +376,8 @@ class Handler(BaseHTTPRequestHandler):
             existing = _find_source(store, kind, url, mac)
             if existing is not None:
                 values = {"name": name or existing.get("name") or _default_name(kind, url, mac), "ua": ua}
+                if epg_url:
+                    values["epg_url"] = epg_url
                 store.update_source(existing.get("id"), **values)
                 store.clear_cache(existing.get("id"))
                 if activate:
@@ -381,6 +388,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not name:
                     name = _default_name(kind, url, mac)
                 source = store.new_source(kind, name, url, mac, ua)
+                if epg_url:
+                    store.update_source(source.get("id"), epg_url=epg_url)
+                    source = store.get_source(source.get("id"))
                 if activate:
                     store.set_active(source.get("id"))
                 updated = False

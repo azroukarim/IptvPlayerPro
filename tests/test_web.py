@@ -63,6 +63,7 @@ def main():
         assert status == 200
         assert b'id="m3uForm"' in page
         assert b'id="magForm"' in page
+        assert b'name="epg_url"' in page
         assert b"api/source" in page
 
         status, data = get_json("api/state")
@@ -75,10 +76,12 @@ def main():
             "name": "Test playlist",
             "url": "http://example.com/list.m3u",
             "ua": "VLC/3.0",
+            "epg_url": "http://example.com/epg.xml",
             "activate": 1,
         })
         assert status == 200 and data["ok"]
         assert data["updated"] is False
+        assert data["source"]["epg_url"] == "http://example.com/epg.xml"
         m3u_id = data["source"]["id"]
         assert data["state"]["active"] == m3u_id
         assert len(data["state"]["sources"]) == 1
@@ -98,6 +101,15 @@ def main():
         assert status == 200 and data["updated"] is True
         assert len(data["state"]["sources"]) == 1
         assert data["source"]["name"] == "Updated name"
+        assert data["source"]["epg_url"] == "http://example.com/epg.xml"
+
+        # An invalid EPG URL is rejected.
+        status, data = post_json("api/source", {
+            "type": "m3u",
+            "url": "http://example.com/other.m3u",
+            "epg_url": "ftp://example.com/epg.xml",
+        })
+        assert status == 400 and not data["ok"]
 
         # Invalid MAG MAC is rejected.
         status, data = post_json("api/source", {

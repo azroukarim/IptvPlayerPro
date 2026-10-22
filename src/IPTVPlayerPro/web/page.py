@@ -167,13 +167,15 @@ footer code { color: #d8d8e2; direction: ltr; }
             <input id="m3uName" name="name" type="text" maxlength="80" placeholder="e.g. Main channels">
             <label for="m3uUrl">M3U URL</label>
             <input id="m3uUrl" name="url" type="url" dir="ltr" maxlength="2000" placeholder="http://example.com/playlist.m3u" required>
+            <label for="m3uEpg">EPG URL <span class="opt">(optional)</span></label>
+            <input id="m3uEpg" name="epg_url" type="url" dir="ltr" maxlength="2000" placeholder="http://example.com/xmltv.php">
             <label for="m3uUa">User-Agent <span class="opt">(optional)</span></label>
             <input id="m3uUa" name="ua" type="text" dir="ltr" maxlength="300" placeholder="VLC/3.0">
             <label class="check"><input name="activate" type="checkbox" checked> Activate this source after adding</label>
             <div class="form-actions">
                 <button class="btn primary" type="submit">Add / update playlist</button>
             </div>
-            <p class="hint">If the URL already exists, its details and cache will be refreshed.</p>
+            <p class="hint">If the URL already exists, its details and cache will be refreshed. Leave the EPG field empty to read the guide address from the playlist or derive it from an Xtream link.</p>
         </form>
 
         <form id="magForm" class="card" data-type="mag" autocomplete="off">
@@ -185,6 +187,8 @@ footer code { color: #d8d8e2; direction: ltr; }
             <input id="magUrl" name="url" type="url" dir="ltr" maxlength="2000" placeholder="http://example.com:8080" required>
             <label for="magMac">MAC address</label>
             <input id="magMac" name="mac" type="text" dir="ltr" maxlength="17" placeholder="00:1A:79:12:34:56" required>
+            <label for="magEpg">EPG URL <span class="opt">(optional)</span></label>
+            <input id="magEpg" name="epg_url" type="url" dir="ltr" maxlength="2000" placeholder="http://example.com/xmltv.php">
             <label for="magUa">User-Agent <span class="opt">(optional)</span></label>
             <input id="magUa" name="ua" type="text" dir="ltr" maxlength="300" placeholder="MAG254">
             <label class="check"><input name="activate" type="checkbox" checked> Activate this source after adding</label>
