@@ -431,9 +431,25 @@ class M3UBackend(BaseBackend):
         # screen on "Loading ..." for several retry cycles.  BLUE reload gives
         # the user an explicit retry.
         http = Http(timeout=timeout, user_agent=headers.get("User-Agent"), retries=0)
-        text = http.get_text(url, headers=headers)
+        
+        # Progress callback for download
+        def download_progress(downloaded, total):
+            if total > 0:
+                # 5% to 40% for download
+                pct = 5 + int(35.0 * downloaded / total)
+                _notify(progress, _("Downloading playlist ..."), min(40, pct))
+        
+        text = http.get_text(url, headers=headers, progress=download_progress)
         _notify(progress, _("Reading playlist ..."), 45)
-        items = parse_playlist(text, base_url=url)
+        
+        # Parse with progress for large playlists
+        def parse_progress(parsed_count, total_lines):
+            if total_lines > 1000:
+                # 45% to 80% for parsing
+                pct = 45 + int(35.0 * parsed_count / total_lines)
+                _notify(progress, _("Reading playlist ..."), min(80, pct))
+        
+        items = parse_playlist(text, base_url=url, progress=parse_progress)
         if not items:
             raise NetError(_("The playlist is empty."))
         epg_urls = playlist_epg_urls(text, base_url=url)

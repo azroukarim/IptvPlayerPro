@@ -86,16 +86,28 @@ def _split_extinf(line):
     return body, ""
 
 
-def parse_playlist(text, base_url=""):
+def parse_playlist(text, base_url="", progress=None):
     """Return a list of normalized items from an M3U/M3U8 text."""
     text = to_text(text)
     text = text.lstrip(u"\ufeff")
+    lines = text.splitlines()
+    total_lines = len(lines)
     items = []
     current = None
     pending_group = ""
     pending_ua = ""
     pending_opts = []
-    for raw_line in text.splitlines():
+    parsed_count = 0
+    last_progress_update = 0
+    
+    for raw_line in lines:
+        parsed_count += 1
+        # Throttle progress updates
+        if progress and total_lines > 1000:
+            if parsed_count - last_progress_update >= max(100, total_lines // 100):
+                progress(parsed_count, total_lines)
+                last_progress_update = parsed_count
+        
         line = raw_line.strip()
         if not line:
             continue
@@ -189,6 +201,11 @@ def parse_playlist(text, base_url=""):
         current = None
         pending_ua = ""
         pending_opts = []
+    
+    # Final progress update
+    if progress:
+        progress(total_lines, total_lines)
+    
     return items
 
 

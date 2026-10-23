@@ -70,8 +70,12 @@ class Http(object):
     def get(self, url, headers=None, timeout=None, retries=None):
         return self.request(url, headers=headers, timeout=timeout, retries=retries)
 
-    def get_text(self, url, headers=None, timeout=None, retries=None):
-        data, _ = self.request(url, headers=headers, timeout=timeout, retries=retries)
+    def get_text(self, url, headers=None, timeout=None, retries=None, progress=None):
+        """Download text with optional progress callback.
+        
+        progress callback signature: progress(downloaded_bytes, total_bytes)
+        """
+        data, _ = self.request(url, headers=headers, timeout=timeout, retries=retries, progress=progress)
         return data
 
     def get_json(self, url, headers=None, timeout=None, retries=None):
@@ -79,14 +83,14 @@ class Http(object):
         return json_loads_tolerant(text)
 
     # ------------------------------------------------------------- request
-    def request(self, url, headers=None, timeout=None, retries=None):
+    def request(self, url, headers=None, timeout=None, retries=None, progress=None):
         timeout = timeout or self.timeout
         attempts = self.retries if retries is None else retries
         attempts = max(1, attempts + 1)
         last_error = None
         for attempt in range(attempts):
             try:
-                return self._once(url, headers, timeout)
+                return self._once(url, headers, timeout, progress)
             except NetError as error:
                 last_error = error
                 if error.status and 400 <= error.status < 500 and error.status not in (408, 429):
@@ -97,7 +101,7 @@ class Http(object):
                 time.sleep(0.6)
         raise last_error or NetError("network error")
 
-    def _once(self, url, headers, timeout):
+    def _once(self, url, headers, timeout, progress=None):
         request_headers = {
             "User-Agent": self.user_agent,
             "Accept": "*/*",
@@ -119,13 +123,50 @@ class Http(object):
                     handle = urlopen(request, timeout=timeout)
             else:
                 handle = urlopen(request, timeout=timeout)
-            data = handle.read()
+            
+            # Get content length for progress
+            total_size = 0
+            try:
+                cl = handle.headers.get("Content-Length")
+                if cl:
+                    total_size = int(cl)
+            except Exception:
+                pass
+            
+            # Stream download with progress
+            chunk_size = 8192
+            chunks = []
+            downloaded = 0
+            last_progress_time = 0
+            progress_interval = 0.5  # Update progress every 0.5 seconds
+            
+            while True:
+                chunk = handle.read(chunk_size)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                downloaded += len(chunk)
+                
+                # Throttle progress updates
+                if progress and total_size > 0:
+                    import time as _time
+                    now = _time.time()
+                    if now - last_progress_time >= progress_interval:
+                        progress(downloaded, total_size)
+                        last_progress_time = now
+            
+            data = b''.join(chunks)
             encoding = ""
             try:
                 encoding = (handle.headers.get("Content-Encoding") or "").lower()
             except Exception:
                 pass
             data = self._decode_body(data, encoding)
+            
+            # Final progress update
+            if progress and total_size > 0:
+                progress(total_size, total_size)
+            
             return data, handle
         except Exception as error:
             status = None
