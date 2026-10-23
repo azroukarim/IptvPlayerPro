@@ -62,6 +62,24 @@ def status_text(source_id):
         return to_text(job.get("text")) if job else u""
 
 
+def status(source_id):
+    """Return a snapshot of the running job (safe to call from the UI)."""
+    with _LOCK:
+        job = _JOBS.get(to_text(source_id))
+        if not job:
+            return {"state": "idle", "text": u"", "percent": 0, "error": u""}
+        return {
+            "state": to_text(job.get("state") or "running"),
+            "text": to_text(job.get("text")),
+            "percent": max(0, min(100, safe_int(job.get("percent"), 0))),
+            "error": to_text(job.get("error")),
+        }
+
+
+def status_percent(source_id):
+    return status(source_id).get("percent", 0)
+
+
 def wait(source_id, timeout=1800):
     """Wait until preparation ends, following a queued replacement job."""
     source_id = to_text(source_id)
@@ -76,16 +94,31 @@ def wait(source_id, timeout=1800):
             return {"state": "timeout", "error": u""}
         job["done"].wait(remaining)
         with _LOCK:
-            if _JOBS.get(source_id) is not job:
-                continue
+            current = _JOBS.get(source_id)
+            if current is not job:
+                if current is not None:
+                    # A queued refresh replaced this job; follow the new one.
+                    continue
+                # The worker removes the job just before releasing waiters.
+                # Return the state captured in the job object instead of
+                # incorrectly reporting an idle slot.
+                return {"state": job.get("state") or "done",
+                        "error": to_text(job.get("error"))}
             return {"state": job.get("state") or "done",
                     "error": to_text(job.get("error"))}
 
 
-def _report(job, text):
+def _report(job, text, percent=None):
     if job["cancel"].is_set():
         raise PrefetchCancelled(u"cancelled")
     job["text"] = to_text(text)
+    if percent is not None:
+        try:
+            value = max(0, min(100, int(percent)))
+        except Exception:
+            return
+        if value >= safe_int(job.get("percent"), 0):
+            job["percent"] = value
 
 
 def _run(store, source_id, force, job):
@@ -99,11 +132,13 @@ def _run(store, source_id, force, job):
         backend = create_backend(source, store)
         if backend is None:
             raise RuntimeError(u"Unsupported source")
-        report = lambda text: _report(job, text)
+        report = lambda text, percent=None: _report(job, text, percent)
         backend.refresh(force=force, progress=report)
         counts = backend.prefetch(progress=report, force=False) or {}
         if job["cancel"].is_set():
             raise PrefetchCancelled(u"cancelled")
+        job["percent"] = 100
+        job["text"] = _("Ready")
         current = store.get_source(source_id)
         if current is None:
             store.clear_cache(source_id)
@@ -193,6 +228,7 @@ def start(store, source_id, force=False):
             "done": threading.Event(),
             "cancel": threading.Event(),
             "text": _("Preparing ..."),
+            "percent": 0,
             "state": "running",
             "error": u"",
             "pending": None,
@@ -216,6 +252,8 @@ def start(store, source_id, force=False):
         with _LOCK:
             if _JOBS.get(source_id) is job:
                 _JOBS.pop(source_id, None)
+        job["state"] = "error"
+        job["error"] = to_text(exc)
         job["done"].set()
         try:
             store.update_info(source_id, prefetch="error",

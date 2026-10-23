@@ -74,6 +74,20 @@ def _page_size(settings):
     return max(50, min(1000, safe_int(settings.get("page_size"), 300)))
 
 
+def _notify(progress, text, percent=None):
+    """Call a progress callback with an optional percentage.
+
+    Older callers (and the EPG downloader) only accept one argument, so fall
+    back to the text-only form when needed.
+    """
+    if not progress:
+        return
+    try:
+        progress(text, percent)
+    except TypeError:
+        progress(text)
+
+
 # Parsing a large playlist takes seconds on a receiver, so the parsed
 # catalogue must survive the screen changes.  One backend instance is kept
 # per source and reused by every screen.
@@ -354,8 +368,7 @@ class M3UBackend(BaseBackend):
                     return True
             else:
                 return True
-        if progress:
-            progress(_("Downloading playlist ..."))
+        _notify(progress, _("Downloading playlist ..."), 5)
         url = to_text(self.source.get("url")).strip()
         if not url:
             raise NetError(_("Invalid URL"))
@@ -368,8 +381,7 @@ class M3UBackend(BaseBackend):
         # the user an explicit retry.
         http = Http(timeout=timeout, user_agent=headers.get("User-Agent"), retries=0)
         text = http.get_text(url, headers=headers)
-        if progress:
-            progress(_("Reading playlist ..."))
+        _notify(progress, _("Reading playlist ..."), 45)
         items = parse_playlist(text, base_url=url)
         if not items:
             raise NetError(_("The playlist is empty."))
@@ -380,8 +392,7 @@ class M3UBackend(BaseBackend):
             "epg_urls": epg_urls,
         })
         self._apply(catalogue)
-        if progress:
-            progress(_("Saving playlist ..."))
+        _notify(progress, _("Saving playlist ..."), 85)
         self.store.save_cache(self.source_id, catalogue)
         if force:
             # Channel ids may have changed, so an old mapping cannot be trusted.
@@ -637,12 +648,10 @@ class MagBackend(BaseBackend):
             else:
                 return True
         client = self._make_client()
-        if progress:
-            progress(_("Connecting to the portal ..."))
+        _notify(progress, _("Connecting to the portal ..."), 2)
         try:
             client.auth()
-            if progress:
-                progress(_("Reading portal categories ..."))
+            _notify(progress, _("Reading portal categories ..."), 6)
             genres_itv = client.itv_genres()
             genres_vod = client.vod_categories()
             self.genres_itv = genres_itv
@@ -651,6 +660,18 @@ class MagBackend(BaseBackend):
             channels_res = []
             vod_res = []
             series_res = []
+            work = {
+                "done": 0,
+                "total": max(1, len(genres_vod)) * 2 + 1,
+                "lock": threading.Lock(),
+            }
+
+            def _bump(text=None):
+                with work["lock"]:
+                    work["done"] += 1
+                    done = work["done"]
+                percent = 10 + int(76.0 * done / work["total"])
+                _notify(progress, text or _("Preparing ..."), min(88, percent))
 
             def _fetch_live():
                 try:
@@ -674,13 +695,16 @@ class MagBackend(BaseBackend):
                     channels_res.extend(raw_ch)
                 except Exception as e:
                     _logger.warning("MAG live channels fetch failed: %s", e)
+                finally:
+                    _bump(_("Reading channels ..."))
 
             def _fetch_vod():
                 try:
                     c = self._make_client()
                     c.token = client.token
                     c.endpoint = client.endpoint
-                    items, _ = self._prefetch_catalogue(c, "vod", genres_vod, progress)
+                    items, _ = self._prefetch_catalogue(
+                        c, "vod", genres_vod, progress, on_genre_done=_bump)
                     vod_res.extend(items)
                 except Exception as e:
                     _logger.warning("MAG VOD fetch failed: %s", e)
@@ -690,7 +714,8 @@ class MagBackend(BaseBackend):
                     c = self._make_client()
                     c.token = client.token
                     c.endpoint = client.endpoint
-                    items, _ = self._prefetch_catalogue(c, "series", genres_vod, progress)
+                    items, _ = self._prefetch_catalogue(
+                        c, "series", genres_vod, progress, on_genre_done=_bump)
                     series_res.extend(items)
                 except Exception as e:
                     _logger.warning("MAG series fetch failed: %s", e)
@@ -729,8 +754,7 @@ class MagBackend(BaseBackend):
                 "mac": client.mac,
             }
             self._apply(payload)
-            if progress:
-                progress(_("Saving portal data ..."))
+            _notify(progress, _("Saving portal data ..."), 92)
             payload["channels"] = self.channels
             payload["channels_compact"] = True
             self.store.save_cache(self.source_id, payload)
@@ -804,8 +828,7 @@ class MagBackend(BaseBackend):
     def _prefetch_client(self, progress=None):
         client = self._make_client()
         if not client.token:
-            if progress:
-                progress(_("Connecting to the portal ..."))
+            _notify(progress, _("Connecting to the portal ..."), 2)
             client.auth()
         return client
 
@@ -821,12 +844,12 @@ class MagBackend(BaseBackend):
             total = max(total, safe_int(reported))
             if total and len(rows) >= total:
                 break
-            if progress:
-                progress(u"{0} {1}".format(label, len(rows)))
+            _notify(progress, u"{0} {1}".format(label, len(rows)))
             page += 1
         return rows
 
-    def _prefetch_catalogue(self, client, kind, genres, progress=None):
+    def _prefetch_catalogue(self, client, kind, genres, progress=None,
+                            on_genre_done=None):
         if kind == "vod":
             label = _("Preparing movies ...")
             fetch_fn = lambda c, genre, page: c.ordered_list("vod", genre, page)
@@ -867,8 +890,8 @@ class MagBackend(BaseBackend):
                     genre = genre_queue.pop(0)
                 genre_id = to_text(genre.get("id"))
                 genre_name = to_text(genre.get("name") or "")
-                if progress:
-                    progress(u"{0} {1}".format(label, genre_name))
+                genre_text = u"{0} {1}".format(label, genre_name)
+                _notify(progress, genre_text)
                 try:
                     raws = self._all_pages(lambda g, p: fetch_fn(c, g, p), genre_id, label, progress)
                     with cat_lock:
@@ -895,6 +918,9 @@ class MagBackend(BaseBackend):
                     raise
                 except Exception as error:
                     _logger.warning("MAG fetch genre %s failed: %s", genre_id, error)
+                finally:
+                    if on_genre_done is not None:
+                        on_genre_done(genre_text)
 
         num_threads = min(3, len(genre_list))
         threads = []

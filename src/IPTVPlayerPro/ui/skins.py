@@ -8,6 +8,12 @@ MAIN_SKIN = """
     <widget name="status1" position="800,46" size="438,28" font="Regular;19" halign="right" valign="center" foregroundColor="#d2d2d2" transparent="1" />
     <widget name="status2" position="800,74" size="438,26" font="Regular;16" halign="right" valign="center" foregroundColor="#a37c7c" transparent="1" />
 
+    <widget name="loadingBg" position="800,8" size="440,104" alphatest="blend" scale="1" />
+    <widget name="loadingTitle" position="816,14" size="280,26" font="Regular;19" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" />
+    <widget name="loadingPercent" position="1096,12" size="128,30" font="Bold;22" halign="right" valign="center" foregroundColor="#f0b34a" transparent="1" />
+    <widget name="loadingBar" position="816,44" size="408,14" alphatest="blend" scale="1" />
+    <widget name="loadingText" position="816,64" size="408,32" font="Regular;14" halign="left" valign="center" foregroundColor="#c9a7a7" transparent="1" />
+
     <widget name="t0" position="60,250" size="300,300" alphatest="blend" scale="1" />
     <widget name="i0" position="140,286" size="140,140" alphatest="blend" scale="1" />
     <widget name="l0" position="60,448" size="300,58" font="Regular;30" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" />

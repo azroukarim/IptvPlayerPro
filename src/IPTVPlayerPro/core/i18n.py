@@ -36,6 +36,11 @@ _AR = {
     "The source is already being prepared.": u"المصدر قيد التجهيز بالفعل.",
     "Saving playlist ...": u"جارٍ حفظ القائمة ...",
     "Saving portal data ...": u"جارٍ حفظ بيانات البورتال ...",
+    "Loading Live TV ...": u"جارٍ تحميل البث المباشر ...",
+    "Loading Movies ...": u"جارٍ تحميل الأفلام ...",
+    "Loading Series ...": u"جارٍ تحميل المسلسلات ...",
+    "Ready": u"جاهز",
+    "Data folder": u"مجلد البيانات",
     "No active playlist": u"لا توجد قائمة نشطة",
     "Open the server list and add an M3U playlist or a MAG portal first.":
         u"افتح قائمة السيرفرات وأضف قائمة M3U أو بورتال MAG أولًا.",

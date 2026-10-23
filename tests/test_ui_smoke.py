@@ -550,6 +550,50 @@ def main():
         main_menu.layout_ready()
         assert main_menu["l0"].text
         assert main_menu["status1"].text
+        assert not main_menu["loadingBg"].visible
+
+        # Long category/channel names get the full row; the count/number is
+        # pinned to the far right edge instead of reserving space beside it.
+        from IPTVPlayerPro.ui.base import category_entry, channel_entry
+        category = category_entry(292, 58, u"قسم عربي طويل جدًا", value=u"1,234")
+        count = [entry for entry in category if getattr(entry, "text", "") == u"1,234"][0]
+        title = [entry for entry in category if getattr(entry, "text", "") == u"قسم عربي طويل جدًا"][0]
+        assert count.pos[0] + count.size[0] == 292 - 4
+        assert title.size[0] == 292 - 12
+        channel = channel_entry(412, 58, 12, u"قناة طويلة جدًا", icon=object(), favorite=True)
+        number = [entry for entry in channel if getattr(entry, "text", "") == u"12"][0]
+        assert number.pos[0] + number.size[0] == 412 - 4
+
+        # The loading panel animates 0/100 -> 100/100 and only then opens the
+        # requested browser screen.
+        class ReadyBackend(object):
+            def is_ready(self):
+                return True
+
+            def is_vod_ready(self):
+                return True
+
+            def is_series_ready(self):
+                return True
+
+            def ensure_fresh(self):
+                return False
+
+        opened_before = len(session.opened)
+        main_menu.backend = ReadyBackend()
+        main_menu._show_loading("live")
+        assert main_menu["loadingBg"].visible
+        assert not main_menu["status1"].visible
+        assert main_menu["loadingPercent"].text == "0/100"
+        assert main_menu["loadingTitle"].text
+        main_menu._loading_display = 99.0
+        main_menu._loading_target = 100
+        main_menu._loading_finished = True
+        for _step in range(24):
+            main_menu._loading_tick()
+        assert not main_menu["loadingBg"].visible
+        assert main_menu["status1"].visible
+        assert len(session.opened) > opened_before
 
         sources = SourcesScreen(session, store)
         assert sources["list"].l.items

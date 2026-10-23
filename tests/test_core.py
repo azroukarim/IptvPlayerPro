@@ -27,7 +27,7 @@ from IPTVPlayerPro.core.epg import (derive_epg_url, parse_xmltv_time,  # noqa: E
                                     playlist_epg_urls)
 from IPTVPlayerPro.core.i18n import set_language  # noqa: E402
 from IPTVPlayerPro.core.mag import MagClient, normalize_mac, normalize_portal  # noqa: E402
-from IPTVPlayerPro.core.store import Store  # noqa: E402
+from IPTVPlayerPro.core.store import Store, _migrate_data_files  # noqa: E402
 from IPTVPlayerPro.core.backends import M3UBackend, MagBackend, source_summary  # noqa: E402
 from IPTVPlayerPro.core.util import stream_url_with_headers  # noqa: E402
 
@@ -203,6 +203,96 @@ def test_store(tmp):
         handle.close()
     result = reloaded.import_server_files()
     check(result["added"] == 1 and len(reloaded.sources) == 2, "servers imported from text file")
+
+
+def test_data_folder(tmp):
+    print("[data folder]")
+    from IPTVPlayerPro.core.util import write_json
+    legacy = os.path.join(tmp, "legacy-data")
+    target = os.path.join(tmp, "one-data-folder")
+    os.makedirs(legacy)
+    write_json(os.path.join(legacy, "config.json"), {
+        "version": 1,
+        "settings": {"language": "ar"},
+        "sources": [],
+        "active": "",
+    })
+    with open(os.path.join(legacy, "m3u.txt"), "w") as handle:
+        handle.write("name|http://example.com/list.m3u|VLC\n")
+    with open(os.path.join(legacy, "mac.txt"), "w") as handle:
+        handle.write("name|http://portal.example|00:1A:79:11:22:33|VLC\n")
+
+    _migrate_data_files(target, config_sources=[legacy], server_sources=[legacy])
+    for name in ("config.json", "m3u.txt", "mac.txt"):
+        path = os.path.join(target, name)
+        check(os.path.isfile(path) and os.path.getsize(path) > 0,
+              "migrated " + name)
+
+    store = Store(config_dir=target, cache_dir=os.path.join(tmp, "folder-cache"))
+    check(store.settings["data_dir"] == target, "data_dir points at config folder")
+    check(store.settings["m3u_file"] == os.path.join(target, "m3u.txt"),
+          "m3u file lives beside config")
+    check(store.settings["mac_file"] == os.path.join(target, "mac.txt"),
+          "mac file lives beside config")
+    check(os.path.isfile(os.path.join(target, "config.json")),
+          "config created in the same folder")
+
+    # The API also keeps both text paths in the data folder if an old caller
+    # tries to set a different location.
+    store.set_setting("m3u_file", os.path.join(tmp, "elsewhere", "m3u.txt"))
+    check(store.settings["m3u_file"] == os.path.join(target, "m3u.txt"),
+          "m3u path cannot leave the data folder")
+
+
+def test_prefetch_progress(tmp):
+    print("[prefetch progress]")
+    import threading
+    import time
+    import IPTVPlayerPro.core.prefetch as prefetch
+    store = Store(config_dir=os.path.join(tmp, "prefetch-data"),
+                  cache_dir=os.path.join(tmp, "prefetch-cache"))
+    source = store.new_source("m3u", "Progress", "http://example.com/progress.m3u")
+    started = threading.Event()
+    release = threading.Event()
+
+    class FakeBackend(object):
+        def refresh(self, force=False, progress=None):
+            if progress:
+                progress("Downloading", 12)
+            started.set()
+            release.wait(2)
+            if progress:
+                progress("Saving", 88)
+            return True
+
+        def prefetch(self, progress=None, force=False):
+            if progress:
+                progress("Ready", 100)
+            return {"live": 1, "vod": 2, "series": 3}
+
+    original = prefetch.create_backend
+    prefetch.create_backend = lambda source, store: FakeBackend()
+    try:
+        check(prefetch.start(store, source["id"], force=True), "job started")
+        check(started.wait(2), "worker reported progress")
+        check(prefetch.status_percent(source["id"]) >= 12,
+              "progress percentage exposed")
+        waiter = {}
+        def wait_job():
+            waiter["result"] = prefetch.wait(source["id"], timeout=5)
+        thread = threading.Thread(target=wait_job)
+        thread.daemon = True
+        thread.start()
+        time.sleep(0.05)
+        release.set()
+        thread.join(3)
+        result = waiter.get("result") or {}
+        check(result.get("state") == "done", "job finished")
+        check(prefetch.status_percent(source["id"]) == 0,
+              "finished job is removed")
+    finally:
+        release.set()
+        prefetch.create_backend = original
 
 
 def test_mag(tmp):
@@ -385,6 +475,8 @@ def main():
     try:
         test_playlist()
         test_store(tmp)
+        test_data_folder(tmp)
+        test_prefetch_progress(tmp)
         test_mag(tmp)
         test_epg(tmp)
         print("\nAll core tests passed.")

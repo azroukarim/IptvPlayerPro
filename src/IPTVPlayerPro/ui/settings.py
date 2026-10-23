@@ -32,18 +32,6 @@ SERVICE_TYPES = [
 TIMEOUTS = [10, 15, 20, 30, 45, 60]
 CACHE_HOURS = [0, 1, 3, 6, 12, 24, 48]
 WEB_PORTS = [8099, 8088, 8080, 9090, 8000]
-M3U_FILES = [
-    "/etc/enigma2/IPTVPlayerPro/m3u.txt",
-    "/media/hdd/IPTVPlayerPro/m3u.txt",
-    "/media/usb/IPTVPlayerPro/m3u.txt",
-    "/media/usb/m3u.txt",
-]
-MAC_FILES = [
-    "/etc/enigma2/IPTVPlayerPro/mac.txt",
-    "/media/hdd/IPTVPlayerPro/mac.txt",
-    "/media/usb/IPTVPlayerPro/mac.txt",
-    "/media/usb/mac.txt",
-]
 
 
 def storage_label(value):
@@ -135,13 +123,7 @@ class SettingsScreen(ListScreen):
                 "display": lambda value: u"{0} h".format(value),
             },
             {
-                "key": "m3u_file", "label": _("M3U servers file"),
-                "values": M3U_FILES,
-                "display": storage_label,
-            },
-            {
-                "key": "mac_file", "label": _("MAG servers file"),
-                "values": MAC_FILES,
+                "key": "data_dir", "label": _("Data folder"),
                 "display": storage_label,
             },
             {"key": "import_files", "label": _("Import from server files"), "action": True},
@@ -286,15 +268,6 @@ class SettingsScreen(ListScreen):
                 self.apply_label_fonts()
             if "web_enabled" in pending or "web_port" in pending:
                 self.apply_web()
-            if "m3u_file" in pending or "mac_file" in pending:
-                if close_after:
-                    try:
-                        self.store.sync_server_files()
-                    except Exception:
-                        pass
-                else:
-                    self.sync_files()
-                    showed = True
             self.render()
         if close_after:
             self.close()

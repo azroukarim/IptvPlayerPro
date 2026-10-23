@@ -231,10 +231,18 @@ class LiveList(MenuList):
         # three-column browser stays readable from a normal viewing distance.
         self.l.setFont(2, font(24, True))
         self.l.setFont(3, font(26, True))
+        # Counts and channel numbers are secondary information: a slightly
+        # smaller face leaves more room for the actual name.
+        self.l.setFont(4, font(14))
 
 
 def category_entry(width, height, title, value=None):
-    """A clean category row with the channel count on the right."""
+    """A category row with the count pinned to the far right edge.
+
+    The name is allowed to use the whole row and the count is drawn on top of
+    a small background mask.  This gives long Arabic/English category names
+    more visible space instead of clipping them early next to the count.
+    """
     title = to_text(title)
     value = to_text(value) if value else u""
     entries = [
@@ -243,16 +251,22 @@ def category_entry(width, height, title, value=None):
             backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
         )
     ]
-    value_width = 66 if value else 0
+    value_width = 52 if value else 0
     entries.append(MultiContentEntryText(
-        pos=(16, 0), size=(width - 16 - value_width - 10, height),
+        pos=(12, 0), size=(width - 12, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
         text=title, color=LIVE_TEXT, color_sel=WHITE,
     ))
     if value:
+        mask_x = width - value_width - 4
+        entries.append(MultiContentEntryRectangle(
+            pos=(mask_x, 1), size=(width - mask_x, height - 2),
+            backgroundColor=LIVE_ROW_BG,
+            backgroundColorSelected=LIVE_ROW_SEL,
+        ))
         entries.append(MultiContentEntryText(
-            pos=(width - value_width - 10, 0), size=(value_width, height),
-            font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            pos=(mask_x, 0), size=(value_width, height),
+            font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
             text=value, color=LIVE_MUTED, color_sel=WHITE,
         ))
     return entries
@@ -270,32 +284,39 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
         )
     ]
     number_text = u"{0:02d}".format(number) if number else u""
-    number_width = 42 if number_text else 0
-    if number_text:
-        entries.append(MultiContentEntryText(
-            pos=(width - number_width - 6, 0), size=(number_width, height),
-            font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
-            text=number_text, color=LIVE_MUTED, color_sel=WHITE,
-        ))
-    icon_x = 12
+    number_width = 36 if number_text else 0
+    icon_x = 10
     if icon is not None:
         entries.append(MultiContentEntryPixmapAlphaTest(
             pos=(icon_x, (height - 32) // 2), size=(32, 32), png=icon,
         ))
-    text_x = icon_x + 44
-    badge_width = 26 if favorite else 0
-    text_width = max(40, width - text_x - number_width - badge_width - 12)
+    text_x = icon_x + 40
+    badge_width = 24 if favorite else 0
     entries.append(MultiContentEntryText(
-        pos=(text_x, 0), size=(text_width, height),
+        pos=(text_x, 0), size=(width - text_x, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
         text=title, color=LIVE_TEXT, color_sel=WHITE,
     ))
+    if number_text or favorite:
+        mask_x = width - number_width - badge_width - 6
+        if mask_x < text_x:
+            mask_x = text_x
+        entries.append(MultiContentEntryRectangle(
+            pos=(mask_x, 1), size=(width - mask_x, height - 2),
+            backgroundColor=bg, backgroundColorSelected=selected_bg,
+        ))
     if favorite:
         entries.append(MultiContentEntryText(
-            pos=(width - number_width - badge_width - 12, 0),
+            pos=(width - number_width - badge_width - 4, 0),
             size=(badge_width, height),
             font=2, flags=RT_HALIGN_CENTER | RT_VALIGN_CENTER,
             text=u"\u2605", color=LIVE_ACCENT, color_sel=WHITE,
+        ))
+    if number_text:
+        entries.append(MultiContentEntryText(
+            pos=(width - number_width - 4, 0), size=(number_width, height),
+            font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            text=number_text, color=LIVE_MUTED, color_sel=WHITE,
         ))
     return entries
 

@@ -332,6 +332,43 @@ def make_logo():
     save(downsample(img, (160, 59)), "logo_small.png")
 
 
+def make_loading_assets():
+    """Top-right loading panel and 5% progress-bar frames."""
+    panel = Image.new("RGBA", (440, 104), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(panel)
+    draw.rounded_rectangle([0, 0, 439, 103], radius=12,
+                           fill=(18, 5, 7, 242), outline=(150, 30, 30, 255),
+                           width=2)
+    draw.rounded_rectangle([12, 4, 428, 6], radius=1,
+                           fill=(220, 50, 50, 255))
+    save(panel, "loading_panel.png")
+
+    width, height = 408, 14
+    for index in range(21):
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([0, 0, width - 1, height - 1], radius=7,
+                               fill=(38, 12, 16, 255),
+                               outline=(120, 34, 38, 255), width=1)
+        fill_width = int((width - 4) * index / 20.0)
+        if fill_width > 0:
+            gradient = Image.new("RGBA", (width, height))
+            gdraw = ImageDraw.Draw(gradient)
+            for x in range(width):
+                ratio = float(x) / max(1, width - 1)
+                color = (int(180 + 70 * ratio), int(24 + 90 * ratio),
+                         int(24 + 30 * ratio), 255)
+                gdraw.line([(x, 0), (x, height)], fill=color)
+            mask = Image.new("L", (width, height), 0)
+            ImageDraw.Draw(mask).rounded_rectangle(
+                [1, 1, fill_width, height - 2], radius=6, fill=255)
+            img.paste(gradient, (0, 0), mask)
+            draw = ImageDraw.Draw(img)
+            draw.rounded_rectangle([0, 0, width - 1, height - 1], radius=7,
+                                   outline=(150, 40, 42, 255), width=1)
+        save(img, "loadbar_{0:02d}.png".format(index))
+
+
 def make_plugin_icon():
     # PluginBrowser draws this with a 100x40 box and BT_SCALE.
     img = Image.new("RGBA", (200, 80), (0, 0, 0, 0))
@@ -366,6 +403,7 @@ def main():
     save(icon_mag_box(), "mag.png")
     save(icon_more(), "more.png")
     save(icon_episode(), "episode.png")
+    make_loading_assets()
     make_cards()
     make_background()
     make_logo()
