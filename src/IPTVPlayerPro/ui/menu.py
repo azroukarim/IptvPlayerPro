@@ -34,14 +34,14 @@ TILES = [
 ]
 
 NAV = {
-    "live": {"left": "server", "right": "movies", "up": "settings", "down": "account"},
-    "movies": {"left": "live", "right": "settings", "up": "movies", "down": "account"},
+    "live": {"left": "server", "right": "movies", "up": "settings", "down": "exit"},
+    "movies": {"left": "live", "right": "series", "up": "movies", "down": "account"},
     "series": {"left": "movies", "right": "settings", "up": "series", "down": "server"},
     "account": {"left": "live", "right": "reload", "up": "movies", "down": "account"},
     "server": {"left": "live", "right": "reload", "up": "series", "down": "server"},
-    "settings": {"left": "movies", "right": "settings", "up": "settings", "down": "reload"},
-    "reload": {"left": "server", "right": "reload", "up": "settings", "down": "exit"},
-    "exit": {"left": "server", "right": "exit", "up": "reload", "down": "exit"},
+    "settings": {"left": "movies", "right": "live", "up": "settings", "down": "reload"},
+    "reload": {"left": "server", "right": "live", "up": "settings", "down": "exit"},
+    "exit": {"left": "server", "right": "live", "up": "reload", "down": "exit"},
 }
 
 
