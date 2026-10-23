@@ -33,6 +33,14 @@ from ..core.util import md5, safe_int, stream_url_with_headers, to_text
 
 PLUGIN_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGE_PATH = os.path.join(PLUGIN_PATH, "images")
+FONT_PATH = os.path.join(PLUGIN_PATH, "fonts")
+
+# Fonts shipped with the plugin.  The key is the value stored in the settings;
+# the tuple is (file name, alias registered with Enigma2).
+FONT_FILES = {
+    "bein": ("beIN Normal.ttf", "IPTVPlayerPro_beIN"),
+    "premier": ("Premier_League.ttf", "IPTVPlayerPro_Premier"),
+}
 
 WHITE = "#ffffff"
 GREY = "#b8b8b8"
@@ -52,6 +60,8 @@ LIVE_ACCENT = "#f5c84b"
 
 _PIXMAPS = {}
 _FONTS = {}
+_ACTIVE_FONT = None
+_REGISTERED_FONTS = set()
 
 
 def image(name):
@@ -71,13 +81,69 @@ def pixmap(name, cache=True):
     return LoadPixmap(path)
 
 
+def register_fonts():
+    """Register the custom fonts bundled with the plugin."""
+    if len(_REGISTERED_FONTS) >= len(FONT_FILES):
+        return
+    try:
+        from enigma import addFont
+    except Exception:
+        return
+    for key, (filename, alias) in FONT_FILES.items():
+        if key in _REGISTERED_FONTS:
+            continue
+        path = os.path.join(FONT_PATH, filename)
+        if not os.path.isfile(path):
+            continue
+        try:
+            addFont(path, alias, 100, False, 0)
+            _REGISTERED_FONTS.add(key)
+        except Exception:
+            # Older Enigma2 versions expose addFont with four arguments.
+            try:
+                addFont(path, alias, 100, 0)
+                _REGISTERED_FONTS.add(key)
+            except Exception:
+                pass
+
+
+def set_active_font(key):
+    """Select the font used by the plugin's list entries.
+
+    ``key`` is the value stored in settings: ``default``, ``bein`` or
+    ``premier``.  Unknown or unavailable fonts fall back to the receiver's
+    default face.
+    """
+    global _ACTIVE_FONT
+    if key not in FONT_FILES:
+        _ACTIVE_FONT = None
+        return None
+    register_fonts()
+    alias = FONT_FILES[key][1] if key in _REGISTERED_FONTS else None
+    _ACTIVE_FONT = alias
+    return alias
+
+
+def active_font():
+    return _ACTIVE_FONT
+
+
+def skin_factor():
+    """Return the receiver's skin scale (the screens target 720p)."""
+    try:
+        from enigma import getDesktop
+        return max(0.5, getDesktop(0).size().height() / 720.0)
+    except Exception:
+        return 1.0
+
+
 def font(size, bold=False, font_name=None):
-    key = (size, bold, font_name)
+    name = font_name or _ACTIVE_FONT or ("Bold" if bold else "Regular")
+    key = (size, name)
     ptr = _FONTS.get(key)
     if ptr is None:
         try:
-            font_basename = font_name or ("Bold" if bold else "Regular")
-            ptr = gFont(font_basename, size)
+            ptr = gFont(name, size)
         except Exception:
             ptr = gFont("Regular", size)
         _FONTS[key] = ptr
@@ -102,6 +168,9 @@ class MultiList(MenuList):
     def __init__(self, item_height=72):
         MenuList.__init__(self, [], False, eListboxPythonMultiContent)
         self.l.setItemHeight(item_height)
+        self.apply_fonts()
+
+    def apply_fonts(self):
         self.l.setFont(0, font(22))
         self.l.setFont(1, font(16))
         self.l.setFont(2, font(23, True))
@@ -114,6 +183,9 @@ class LiveList(MenuList):
     def __init__(self, item_height=58):
         MenuList.__init__(self, [], False, eListboxPythonMultiContent)
         self.l.setItemHeight(item_height)
+        self.apply_fonts()
+
+    def apply_fonts(self):
         self.l.setFont(0, font(18))
         self.l.setFont(1, font(16))
         # Category and channel names use a noticeably larger face so the
@@ -430,6 +502,7 @@ class ListScreen(AsyncScreen):
     def _layout_ready(self):
         set_background(self)
         set_logo(self)
+        self.apply_label_fonts()
         try:
             self["list"].enableAutoNavigation(False)
         except Exception:
@@ -437,7 +510,31 @@ class ListScreen(AsyncScreen):
         self.layout_ready()
 
     def _shown(self):
+        try:
+            self["list"].apply_fonts()
+        except Exception:
+            pass
+        self.apply_label_fonts()
         self.shown_ready()
+
+    def apply_label_fonts(self):
+        """Apply the selected font to the skin-drawn labels.
+
+        The inline skins are written for 1280x720, so their font sizes must
+        be multiplied by the receiver's skin factor before being passed to
+        gFont().
+        """
+        scale = skin_factor()
+        for name, size in (("title", 30), ("subtitle", 18),
+                           ("status", 18), ("hint", 18)):
+            widget = self.get(name)
+            instance = getattr(widget, "instance", None) if widget is not None else None
+            if instance is None:
+                continue
+            try:
+                instance.setFont(font(int(round(size * scale))))
+            except Exception:
+                pass
 
     def layout_ready(self):
         pass

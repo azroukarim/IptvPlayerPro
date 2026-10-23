@@ -6,8 +6,11 @@ from __future__ import absolute_import
 from ..core.i18n import _, language_label, set_language
 from ..core.store import VERSION
 from ..core.util import safe_int, to_text
-from .base import ListScreen, LiveList, font, info_box, row_entry, yes_no
+from .base import (ListScreen, LiveList, font, info_box, row_entry,
+                   set_active_font, yes_no)
 
+
+FONT_CHOICES = ["default", "bein", "premier"]
 
 SERVICE_TYPES = [
     (4097, u"4097  \u2022  GStreamer"),
@@ -41,6 +44,14 @@ def storage_label(value):
     return text
 
 
+def font_label(value):
+    if value == "bein":
+        return u"beIN (AR/EN)"
+    if value == "premier":
+        return u"Premier League (EN)"
+    return _("Default")
+
+
 class SettingsList(LiveList):
     """58 px rows with text sized like the screen hint.
 
@@ -50,8 +61,7 @@ class SettingsList(LiveList):
     keeping the same row height as the CHANNELS list.
     """
 
-    def __init__(self, item_height=58):
-        LiveList.__init__(self, item_height)
+    def apply_fonts(self):
         self.l.setFont(1, font(20))
         self.l.setFont(2, font(28, True))
         self.l.setFont(3, font(28, True))
@@ -67,6 +77,11 @@ class SettingsScreen(ListScreen):
         ListScreen.__init__(self, session, _("Player settings"), u"",
                             _("LEFT/RIGHT change  •  OK action  •  GREEN save  •  RED close"))
         self.store = store
+        set_active_font(self.store.settings.get("font") or "default")
+        try:
+            self["list"].apply_fonts()
+        except Exception:
+            pass
         # Changes are staged here until the user selects "Save settings".
         self.draft = dict(self.store.settings)
         self.options = []
@@ -81,6 +96,11 @@ class SettingsScreen(ListScreen):
                 "key": "language", "label": _("Language"),
                 "values": ["ar", "en"],
                 "display": lambda value: language_label(value),
+            },
+            {
+                "key": "font", "label": _("Font"),
+                "values": FONT_CHOICES,
+                "display": font_label,
             },
             {
                 "key": "service_type", "label": _("Stream engine"),
@@ -203,6 +223,13 @@ class SettingsScreen(ListScreen):
         if key == "language":
             set_language(values[index])
             self.build_options()
+        elif key == "font":
+            set_active_font(values[index])
+            try:
+                self["list"].apply_fonts()
+            except Exception:
+                pass
+            self.apply_label_fonts()
         self.render()
 
     def key_left(self):
@@ -243,6 +270,13 @@ class SettingsScreen(ListScreen):
             if "language" in pending:
                 set_language(self.store.settings.get("language") or "ar")
                 self.build_options()
+            if "font" in pending:
+                set_active_font(self.store.settings.get("font") or "default")
+                try:
+                    self["list"].apply_fonts()
+                except Exception:
+                    pass
+                self.apply_label_fonts()
             if "web_enabled" in pending or "web_port" in pending:
                 self.apply_web()
             if "m3u_file" in pending or "mac_file" in pending:
@@ -273,6 +307,7 @@ class SettingsScreen(ListScreen):
             self.save_changes(close_after=True)
             return
         set_language(self.store.settings.get("language") or "ar")
+        set_active_font(self.store.settings.get("font") or "default")
         self.close()
 
     def apply_web(self):

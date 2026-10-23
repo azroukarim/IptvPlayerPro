@@ -204,6 +204,8 @@ _AR = {
     "LEFT/RIGHT change  •  OK action  •  GREEN save  •  RED close":
         u"يسار/يمين تغيير  •  OK تنفيذ  •  أخضر حفظ  •  أحمر إغلاق",
     "Language": u"اللغة",
+    "Font": u"الخط",
+    "Default": u"الافتراضي",
     "Stream engine": u"محرك البث",
     "HTTP timeout (seconds)": u"مهلة الاتصال (ثواني)",
     "Page size": u"حجم الصفحة",

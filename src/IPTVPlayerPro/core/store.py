@@ -18,7 +18,7 @@ from .util import (atomic_write, ensure_dir, md5, now, read_json, safe_int,
 _STORE_LOCK = threading.RLock()
 
 
-VERSION = "1.4.3"
+VERSION = "1.5.0"
 
 CONFIG_CANDIDATES = [
     "/etc/enigma2/iptvplayerpro",
@@ -37,6 +37,7 @@ DEFAULT_MAC_FILE = SERVER_FILE_DIR + "/mac.txt"
 
 DEFAULT_SETTINGS = {
     "language": "ar",
+    "font": "default",
     "service_type": 4097,
     "timeout": 20,
     "page_size": 300,

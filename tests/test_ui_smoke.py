@@ -149,6 +149,7 @@ def _build_enigma():
     module.eServiceReference = ServiceReference
     module.getDesktop = lambda index=0: Desktop()
     module.gFont = Font
+    module.addFont = lambda *args: None
     return {"enigma": module}
 
 
@@ -562,7 +563,7 @@ def main():
         # fonts match the larger skin-scaled hint: 28 px bold labels and
         # 20 px values.  Values change with LEFT/RIGHT and persist only
         # through the Save entry at the end of the list.
-        from IPTVPlayerPro.ui.base import LiveList, font as make_font
+        from IPTVPlayerPro.ui.base import LiveList, active_font, font as make_font
         assert make_font(24, True).name == "Bold"
         assert make_font(24, False).name == "Regular"
         assert issubclass(SettingsList, LiveList)
@@ -578,13 +579,45 @@ def main():
         assert settings.draft["language"] != default_language
         settings.key_left()
         assert settings.draft["language"] == default_language
-        settings["list"].setCurrentIndex(2)
+
+        # The font option switches the list to the bundled beIN font and
+        # falls back to the receiver font when Default is selected again.
+        font_index = [i for i, option in enumerate(settings.options)
+                      if option["key"] == "font"][0]
+        assert settings.draft["font"] == "default"
+        settings["list"].setCurrentIndex(font_index)
+        settings.key_right()
+        assert settings.draft["font"] == "bein"
+        assert active_font() == "IPTVPlayerPro_beIN"
+        assert settings["list"].l.fonts[2].name == "IPTVPlayerPro_beIN"
+        settings.key_left()
+        assert settings.draft["font"] == "default"
+        assert active_font() is None
+        assert settings["list"].l.fonts[2].name == "Bold"
+
+        settings.key_right()
+        settings.key_right()
+        assert settings.draft["font"] == "premier"
+        assert active_font() == "IPTVPlayerPro_Premier"
+        assert settings["list"].l.fonts[2].name == "IPTVPlayerPro_Premier"
+        settings.key_left()
+        assert settings.draft["font"] == "bein"
+
+        # Leave beIN selected so saving also persists the font choice.
+        assert settings.draft["font"] == "bein"
+        assert store.settings["font"] == "default"  # not saved yet
+
+        timeout_index = [i for i, option in enumerate(settings.options)
+                         if option["key"] == "timeout"][0]
+        settings["list"].setCurrentIndex(timeout_index)
         old_timeout = store.settings["timeout"]
         settings.key_right()
         assert settings.draft["timeout"] != old_timeout
         assert store.settings["timeout"] == old_timeout  # not saved yet
         settings.save_changes()
         assert store.settings["timeout"] == settings.draft["timeout"]
+        assert store.settings["font"] == "bein"
+        assert active_font() == "IPTVPlayerPro_beIN"
 
         account = AccountScreen(session, store, None)
         account.layout_ready()

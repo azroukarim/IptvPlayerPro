@@ -15,7 +15,8 @@ from ..core.backends import active_backend, source_summary
 from ..core.i18n import _, set_language
 from ..core.store import Store
 from ..core.util import is_expired, to_text
-from .base import AsyncScreen, info_box, pixmap, set_background, set_logo, yes_no
+from .base import (AsyncScreen, info_box, pixmap, set_active_font,
+                   set_background, set_logo, yes_no)
 from .skins import MAIN_SKIN
 
 
@@ -49,6 +50,7 @@ class MainMenu(AsyncScreen):
         AsyncScreen.__init__(self, session)
         self.skinName = "IPTVProMain"
         self.store = Store()
+        set_active_font(self.store.settings.get("font") or "default")
         set_language(self.store.settings.get("language") or "ar")
         prefetch.reconcile(self.store)
         self.backend = active_backend(self.store)
