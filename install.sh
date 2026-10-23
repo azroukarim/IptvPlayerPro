@@ -1,123 +1,139 @@
-#!/bin/sh
-# ============================================================
-#  IPTV Player Pro - Enigma2 installer
-#  https://github.com/azroukarim/IptvPlayerPro
-# ------------------------------------------------------------
-#  Usage on the receiver:
-#    wget -q --no-check-certificate -O /tmp/iptvpro.sh \
-#      https://raw.githubusercontent.com/azroukarim/IptvPlayerPro/main/install.sh
-#    sh /tmp/iptvpro.sh
-#
-#  Or copy install.sh together with the .ipk to /tmp then:
-#    sh /tmp/install.sh
-#
-#  Options:
-#    --no-restart     install without restarting Enigma2
-#    --ipk FILE       install a local .ipk file
-# ============================================================
+#!/bin/bash
+#----------------------------
+# IPTV Player Pro - Installer Script
+#----------------------------
 
-VERSION="1.4.0"
-TAR_NAME="IPTVPlayerPro.tar.gz"
-BASE_RAW="https://raw.githubusercontent.com/azroukarim/IptvPlayerPro/main/dist"
-BASE_GH="https://github.com/azroukarim/IptvPlayerPro/raw/main/dist"
-TMP="/tmp/${TAR_NAME}"
-TARGET_DIR="/usr/lib/enigma2/python/Plugins/Extensions/IPTVPlayerPro"
+# الألوان للرسائل
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # Color Reset
 
-NO_RESTART=0
-LOCAL_TAR=""
+PROJECT_DIR="D:\IPTVPlayerPro"
+IPK_NAME="enigma2-plugin-extensions-iptvplayerpro_1.4.0_all.ipk"
 
-say() {
-    printf '%s\n' "[IPTV Player Pro] $*"
-}
+echo -e "${GREEN}=== IPTV Player Pro Installer Script ===${NC}"
+echo ""
 
-die() {
-    printf '%s\n' "[IPTV Player Pro] ERROR: $*" >&2
+# التحقق من وجود المجلد
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo -e "${RED}❌ خطأ: المجلد $PROJECT_DIR غير موجود${NC}"
     exit 1
-}
+fi
 
-usage() {
-    printf '%s\n' "IPTV Player Pro installer"
-    printf '%s\n' "  --no-restart    install without restarting Enigma2"
-    printf '%s\n' "  --tar FILE      install a local .tar.gz file"
-    printf '%s\n' "  --help          show this help"
-}
+cd "$PROJECT_DIR" || exit 1
 
-download() {
-    if command -v wget >/dev/null 2>&1; then
-        wget -q -O "$TMP" "$1" >/dev/null 2>&1 && return 0
-        wget -q --no-check-certificate -O "$TMP" "$1" >/dev/null 2>&1 && return 0
+echo -e "${YELLOW}📁 التحقق من الملفات...${NC}"
+
+# التحقق من الملفات الأساسية
+if [ ! -f "src/IPTVPlayerPro/core/backends.py" ]; then
+    echo -e "${RED}❌ ملف backends.py غير موجود${NC}"
+    exit 1
+fi
+
+if [ ! -f "src/IPTVPlayerPro/ui/skins.py" ]; then
+    echo -e "${RED}❌ ملف skins.py غير موجود${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ جميع الملفات الأساسية موجودة${NC}"
+echo ""
+
+# بناء الإيبك
+echo -e "${YELLOW}🔨 بناء ملف الإيبك...${NC}"
+
+# طريقة 1: باستخدام install.sh إذا existed
+if [ -f "install.sh" ]; then
+    echo "جاري تنفيذ install.sh..."
+    bash install.sh 2>&1 | tail -20
+    IPK_RESULT=$?
+else
+    # طريقة 2: استخدام python build
+    if [ -f "build.py" ]; then
+        echo "جاري التشغيل بواسطة build.py..."
+        python build.py 2>&1 | tail -20
+        IPK_RESULT=$?
+    else
+        # طريقة 3: cpkg أو manual build
+        echo -e "${RED}⚠️ لا توجد طريقة بناء تلقائية محددة${NC}"
+        echo "الملفات موجودة وجاهزة للManual Build"
+        IPK_RESULT=0
     fi
-    if command -v curl >/dev/null 2>&1; then
-        curl -k -L -s -o "$TMP" "$1" >/dev/null 2>&1 && return 0
-    fi
-    return 1
-}
+fi
 
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --no-restart)
-            NO_RESTART=1
-            ;;
-        --tar|--ipk)
-            shift
-            [ $# -gt 0 ] || die "--tar needs a file path"
-            LOCAL_TAR="$1"
-            ;;
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        *)
-            die "unknown option: $1 (try --help)"
-            ;;
-    esac
-    shift
-done
+# التحقق من إنشاء الإيبك
+if [ -f "dist/$IPK_NAME" ]; then
+    echo -e "${GREEN}✅ تم إنشاء ملف الإيبك successfully:${NC}"
+    ls -la dist/$IPK_NAME
+    IPK_SIZE=$(stat -c%s dist/$IPK_NAME)
+    echo -e "   الحجم: ${IPK_SIZE} bytes"
+else
+    echo -e "${RED}❌ لم يتم إنشاء ملف الإيبك${NC}"
+    echo -e "   يرجى التحقق من سجلات البناء أعلاه"
+    exit 1
+fi
 
-# If the script was copied next to the package, use that local file.
-SELF_DIR="."
-case "$0" in
-    */*) SELF_DIR="${0%/*}" ;;
+echo ""
+echo -e "${GREEN}=== خيارات التثبيت ===${NC}"
+echo ""
+echo -e "${GREEN}1. تثبيت على جهاز (via scp/ssh)${NC}"
+echo -e "${GREEN}2. تثبيت يدوي (Copy ipk to device)${NC}"
+echo -e "${GREEN}3. فقط البناء (Build only)${NC}"
+echo -e "${GREEN}4. عرض تعليمات التثبيت${NC}"
+echo ""
+
+read -p "اختر خياراً (1-4): " install_choice
+
+case $install_choice in
+    1)
+        echo -e "${YELLOW}📡 أدخل عنوان IP للجهاز:${NC}"
+        read device_ip
+        
+        if [ -z "$device_ip" ]; then
+            echo -e "${RED}❌ لم يدخل عنوان IP${NC}"
+            exit 1
+        fi
+        
+        echo -e "${YELLOW}📡 نسخ الملف للجهاز...${NC}"
+        scp "dist/$IPK_NAME" "root@$device_ip:/tmp/"
+        
+        echo -e "${YELLOW}🔧 بدء التثبيت على الجهاز...${NC}"
+        echo -e "   ssh root@$device_ip 'opkg install /tmp/$IPK_NAME'"
+        echo ""
+        echo -e "OR manually on device:${NC}"
+        echo "   opkg install /tmp/$IPK_NAME"
+        echo "   أو عبر واجهة الويب: http://<ip>/cgi-bin/ipkg.cgi"
+        ;;
+        
+    2)
+        echo -e "${YELLOW}📋 تعليمات التثبيت اليدوي:${NC}"
+        echo "   1. نسخ الملف: dist/$IPK_NAME"
+        echo "   2. نقله للجهاز: scp dist/$IPK_NAME root@<IP-device>:/tmp/"
+        echo "   3. التثبيت على الجهاز: opkg install /tmp/$IPK_NAME"
+        echo "   4. إعادة تشغيل enigma2: service enigma2 restart"
+        ;;
+        
+    3)
+        echo -e "${GREEN}✅ تم البناء فقط - الملف في: dist/$IPK_NAME${NC}"
+        ;;
+        
+    4)
+        echo -e "${GREEN}📋 تعليمات التثبيت:${NC}"
+        echo "1. Build the ipk: bash install.sh (choice 1 or 2)"
+        echo "2. Copy to device: scp dist/enigma2-plugin-extensions-iptvplayerpro_1.4.0_all.ipk root@<IP>/tmp/"
+        echo "2. Install on device: opkg install /tmp/enigma2-plugin-extensions-iptvplayerpro_1.4.0_all.ipk"
+        echo "3. Restart enigma2: service enigma2 restart"
+        echo "4. Test: Live TV -> should show loading bar first, then list"
+        ;;
+    
+    *)
+        echo -e "${RED}❌ خيار غير صحيح${NC}"
+        exit 1
+        ;;
 esac
-if [ -z "$LOCAL_TAR" ] && [ -f "$SELF_DIR/$TAR_NAME" ]; then
-    LOCAL_TAR="$SELF_DIR/$TAR_NAME"
-fi
 
-if [ -n "$LOCAL_TAR" ]; then
-    [ -f "$LOCAL_TAR" ] || die "file not found: $LOCAL_TAR"
-    TMP="$LOCAL_TAR"
-    say "Using local package: $TMP"
-else
-    say "Downloading ${TAR_NAME} ..."
-    URL="${IPTVPRO_URL:-$BASE_RAW/$TAR_NAME}"
-    download "$URL" || download "$BASE_GH/$TAR_NAME" || die "download failed, check the network on the receiver"
-    [ -s "$TMP" ] || die "the downloaded file is empty"
-fi
-
-say "Extracting and installing to $TARGET_DIR ..."
-# Remove old version if present to avoid stale/orphaned files
-rm -rf "$TARGET_DIR"
-
-tar -xzf "$TMP" -C / || die "tar extraction failed"
-
-[ "$TMP" = "$LOCAL_TAR" ] || rm -f "$TMP"
-say "Installed successfully: $TARGET_DIR"
-
-if [ "$NO_RESTART" = "1" ]; then
-    say "Restart Enigma2 manually: Menu > Standby & Restart > Restart GUI"
-    exit 0
-fi
-
-say "Restarting Enigma2 ..."
-if command -v init >/dev/null 2>&1; then
-    init 4
-    sleep 2
-    init 3
-elif command -v killall >/dev/null 2>&1; then
-    killall -9 enigma2
-else
-    say "Restart Enigma2 manually: Menu > Standby & Restart > Restart GUI"
-fi
-
-say "Done. Open: Menu > Plugins > IPTV Player Pro"
-
+echo ""
+echo -e "${GREEN}=== انتهى السكريبت ===${NC}"
+echo -e "لمزيد من المعلومات، راجع:${NC}"
+echo "   - GitHub: https://github.com/azroukarim/IptvPlayerPro"
+echo "   - README: اقرأ ملف README.md في المجلد"
