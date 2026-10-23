@@ -6,11 +6,21 @@ from __future__ import absolute_import
 from ..core.i18n import _, language_label, set_language
 from ..core.store import VERSION
 from ..core.util import safe_int, to_text
-from .base import (ListScreen, LiveList, font, info_box, row_entry,
-                   set_active_font, yes_no)
+from .base import (FONT_ORDER, ListScreen, LiveList, font, info_box,
+                   row_entry, set_active_font, yes_no)
 
 
-FONT_CHOICES = ["default", "bein", "premier"]
+FONT_CHOICES = ["default"] + list(FONT_ORDER)
+FONT_LABELS = {
+    "bein": u"beIN (AR/EN)",
+    "premier": u"Premier League (EN)",
+    "cairo": u"Cairo",
+    "tajawal": u"Tajawal",
+    "almarai": u"Almarai",
+    "changa": u"Changa",
+    "elmessiri": u"El Messiri",
+    "lemonada": u"Lemonada",
+}
 
 SERVICE_TYPES = [
     (4097, u"4097  \u2022  GStreamer"),
@@ -45,11 +55,7 @@ def storage_label(value):
 
 
 def font_label(value):
-    if value == "bein":
-        return u"beIN (AR/EN)"
-    if value == "premier":
-        return u"Premier League (EN)"
-    return _("Default")
+    return FONT_LABELS.get(value, _("Default"))
 
 
 class SettingsList(LiveList):

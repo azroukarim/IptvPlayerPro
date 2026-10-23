@@ -40,7 +40,17 @@ FONT_PATH = os.path.join(PLUGIN_PATH, "fonts")
 FONT_FILES = {
     "bein": ("beIN Normal.ttf", "IPTVPlayerPro_beIN"),
     "premier": ("Premier_League.ttf", "IPTVPlayerPro_Premier"),
+    "cairo": ("Cairo-Regular.ttf", "IPTVPlayerPro_Cairo"),
+    "tajawal": ("Tajawal-Regular.ttf", "IPTVPlayerPro_Tajawal"),
+    "almarai": ("Almarai-Regular.ttf", "IPTVPlayerPro_Almarai"),
+    "changa": ("Changa-Regular.ttf", "IPTVPlayerPro_Changa"),
+    "elmessiri": ("ElMessiri-Regular.ttf", "IPTVPlayerPro_ElMessiri"),
+    "lemonada": ("Lemonada-Regular.ttf", "IPTVPlayerPro_Lemonada"),
 }
+
+# Display order in Settings.  A tuple keeps the order stable on Python 2.
+FONT_ORDER = ("bein", "premier", "cairo", "tajawal", "almarai",
+              "changa", "elmessiri", "lemonada")
 
 WHITE = "#ffffff"
 GREY = "#b8b8b8"
@@ -110,9 +120,9 @@ def register_fonts():
 def set_active_font(key):
     """Select the font used by the plugin's list entries.
 
-    ``key`` is the value stored in settings: ``default``, ``bein`` or
-    ``premier``.  Unknown or unavailable fonts fall back to the receiver's
-    default face.
+    ``key`` is one of the values stored in settings: ``default``, ``bein``,
+    ``premier`` or one of the additional bundled fonts.  Unknown or
+    unavailable fonts fall back to the receiver's default face.
     """
     global _ACTIVE_FONT
     if key not in FONT_FILES:

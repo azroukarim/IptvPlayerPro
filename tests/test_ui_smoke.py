@@ -563,7 +563,9 @@ def main():
         # fonts match the larger skin-scaled hint: 28 px bold labels and
         # 20 px values.  Values change with LEFT/RIGHT and persist only
         # through the Save entry at the end of the list.
-        from IPTVPlayerPro.ui.base import LiveList, active_font, font as make_font
+        from IPTVPlayerPro.ui.base import (FONT_FILES, FONT_ORDER, FONT_PATH,
+                                           LiveList, active_font,
+                                           font as make_font)
         assert make_font(24, True).name == "Bold"
         assert make_font(24, False).name == "Regular"
         assert issubclass(SettingsList, LiveList)
@@ -574,6 +576,13 @@ def main():
         assert settings["list"].l.fonts[1].size == 20
         assert settings["list"].l.fonts[1].name == "Regular"
         assert settings.options[-1]["key"] == "save_settings"
+        assert set(FONT_ORDER) == set(FONT_FILES)
+        font_option = [option for option in settings.options
+                       if option["key"] == "font"][0]
+        assert font_option["values"] == ["default"] + list(FONT_ORDER)
+        for filename, alias in FONT_FILES.values():
+            assert os.path.isfile(os.path.join(FONT_PATH, filename)), filename
+            assert alias.startswith("IPTVPlayerPro_")
         default_language = settings.draft["language"]
         settings.key_right()
         assert settings.draft["language"] != default_language
@@ -602,9 +611,19 @@ def main():
         assert settings["list"].l.fonts[2].name == "IPTVPlayerPro_Premier"
         settings.key_left()
         assert settings.draft["font"] == "bein"
+        settings.key_right()
+        assert settings.draft["font"] == "premier"
 
-        # Leave beIN selected so saving also persists the font choice.
-        assert settings.draft["font"] == "bein"
+        # Cycle through every additional font and verify its registered alias.
+        for key in FONT_ORDER[2:]:
+            settings.key_right()
+            alias = FONT_FILES[key][1]
+            assert settings.draft["font"] == key
+            assert active_font() == alias
+            assert settings["list"].l.fonts[2].name == alias
+
+        # Leave Lemonada selected so saving also persists the font choice.
+        assert settings.draft["font"] == "lemonada"
         assert store.settings["font"] == "default"  # not saved yet
 
         timeout_index = [i for i, option in enumerate(settings.options)
@@ -616,8 +635,8 @@ def main():
         assert store.settings["timeout"] == old_timeout  # not saved yet
         settings.save_changes()
         assert store.settings["timeout"] == settings.draft["timeout"]
-        assert store.settings["font"] == "bein"
-        assert active_font() == "IPTVPlayerPro_beIN"
+        assert store.settings["font"] == "lemonada"
+        assert active_font() == "IPTVPlayerPro_Lemonada"
 
         account = AccountScreen(session, store, None)
         account.layout_ready()
