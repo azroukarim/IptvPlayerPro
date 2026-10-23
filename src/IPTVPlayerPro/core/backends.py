@@ -22,6 +22,7 @@ from .m3u import (build_catalogue, favourite_key, is_adult_category,
 from .net import Http, NetError
 from .util import (PrefetchCancelled, clean_html, human_age, is_expired, now,
                    safe_int, short_hash, to_text)
+from . import data_cache
 import logging
 _logger = logging.getLogger('iptvplayerpro.backends')
 try:
@@ -395,6 +396,15 @@ class M3UBackend(BaseBackend):
 
     def _refresh_locked(self, force=False, progress=None):
         payload = None if force else self.store.load_cache(self.source_id)
+        # Fallback to persistent data_cache if store cache missing/expired
+        if not payload:
+            try:
+                ns = data_cache.namespace(self.source.get("url"))
+                payload = data_cache.load(ns, "catalogue")
+                if payload:
+                    print('[IPTVPlayerPro] Loaded M3U catalogue from data_cache for %s' % self.source_id)
+            except Exception:
+                pass
         if payload and self._cache_usable(payload) and payload.get("kind") == "m3u":
             self._apply(payload)
             if not self.live:
@@ -435,6 +445,12 @@ class M3UBackend(BaseBackend):
         self._apply(catalogue)
         _notify(progress, _("Saving playlist ..."), 85)
         self.store.save_cache(self.source_id, catalogue)
+        # Persist to data_cache for instant subsequent loads
+        try:
+            ns = data_cache.namespace(self.source.get("url"))
+            data_cache.save(ns, "catalogue", catalogue)
+        except Exception:
+            pass
         # The file timestamp changed.  Without this the shared backend would
         # invalidate itself immediately after its own successful refresh.
         self.mark_cache_stamp()
@@ -744,6 +760,15 @@ class MagBackend(BaseBackend):
                         categories_only=False):
         sections = _section_names(sections)
         payload = self.store.load_cache(self.source_id)
+        # Fallback to persistent data_cache if store cache missing/expired
+        if not payload:
+            try:
+                ns = data_cache.namespace(self.source.get("url"), self.source.get("mac"))
+                payload = data_cache.load(ns, "catalogue")
+                if payload:
+                    print('[IPTVPlayerPro] Loaded catalogue from data_cache for %s' % self.source_id)
+            except Exception:
+                pass
         if payload and payload.get("kind") == "mag":
             # Keep whatever sections were already cached.  A section refresh
             # must not wipe the other sections just because they were not
@@ -933,6 +958,12 @@ class MagBackend(BaseBackend):
             _notify(progress, _("Saving portal data ..."), 92)
             self.store.save_cache(self.source_id, payload)
             self.mark_cache_stamp()
+            # Persist to data_cache for instant subsequent loads
+            try:
+                ns = data_cache.namespace(self.source.get("url"), self.source.get("mac"))
+                data_cache.save(ns, "catalogue", payload)
+            except Exception:
+                pass
             if force and need_live:
                 self.store.clear_epg_cache(self.source_id)
                 self._epg_guide = None
@@ -944,6 +975,12 @@ class MagBackend(BaseBackend):
                 values["status"] = ("expired" if is_expired(expires)
                                     else ("active" if expires else "active"))
                 values["account_name"] = to_text(info.get("name") or "")
+                # Check for subscription change and clear data_cache if needed
+                try:
+                    ns = data_cache.namespace(self.source.get("url"), self.source.get("mac"))
+                    data_cache.check_expiry(ns, expires)
+                except Exception:
+                    pass
             if need_live:
                 values["channels"] = len(self.channels)
             if need_vod_items:

@@ -56,6 +56,9 @@ SERVER_FILE_SOURCES = [
     "/media/usb/iptvplayerpro",
 ]
 CACHE_CANDIDATES = [
+    "/media/hdd/IPTVPlayerPro/cache",
+    "/media/usb/IPTVPlayerPro/cache",
+    "/etc/enigma2/IPTVPlayerPro/cache",
     "/tmp/iptvplayerpro",
     "/var/volatile/tmp/iptvplayerpro",
     "/dev/shm/iptvplayerpro",
@@ -79,6 +82,7 @@ DEFAULT_SETTINGS = {
     "web_enabled": True,
     "web_port": 8099,
     "web_pin": "",
+    "cache_server_data": True,
     "data_dir": SERVER_FILE_DIR,
     "m3u_file": DEFAULT_M3U_FILE,
     "mac_file": DEFAULT_MAC_FILE,
