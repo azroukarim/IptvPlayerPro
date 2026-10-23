@@ -20,7 +20,8 @@ from ..core.epg import clock_text
 from ..core.i18n import _
 from ..core.util import human_count, safe_int, to_text
 from .base import (AsyncScreen, ListScreen, LiveList, category_entry,
-                   channel_entry, info_box, pixmap, play_url, row_entry)
+                   channel_entry, font, info_box, pixmap, play_url, row_entry,
+                   skin_factor)
 from .info import InfoScreen
 from .player import LivePlayerScreen
 from .skins import LIVE_SKIN
@@ -423,7 +424,7 @@ class LiveBrowserScreen(BackendScreen):
         }, prio=0, description=_("IPTV Player Pro"))
 
         self.onLayoutFinish.append(self._layout_ready)
-        self.onShown.append(self.shown_ready)
+        self.onShown.append(self._shown_live)
         # Returning from a dialog re-shows the screen.  Re-apply the preview
         # immediately instead of waiting for the keep-alive timer.
         self.onShow.append(self._preview_shown)
@@ -438,6 +439,29 @@ class LiveBrowserScreen(BackendScreen):
         self.onClose.append(self.release_channel_rows)
 
     # -------------------------------------------------------------- layout
+    def _shown_live(self):
+        self.apply_live_fonts()
+        self.shown_ready()
+
+    def apply_live_fonts(self):
+        """Apply the selected font to the live browser headers and lists."""
+        for name in ("categories", "channels"):
+            try:
+                self[name].apply_fonts()
+            except Exception:
+                pass
+        scale = skin_factor()
+        size = int(round(22 * scale))
+        for name in ("catHeader", "chHeader"):
+            widget = self.get(name)
+            instance = getattr(widget, "instance", None) if widget is not None else None
+            if instance is None:
+                continue
+            try:
+                instance.setFont(font(size, True))
+            except Exception:
+                pass
+
     def _layout_ready(self):
         self["bg"].instance.setPixmap(pixmap("live_bg.png"))
         self["header"].instance.setPixmap(pixmap("live_header.png"))
@@ -483,6 +507,7 @@ class LiveBrowserScreen(BackendScreen):
         # The video widget is part of the widget tree but must stay inactive
         # until a channel is explicitly played in the mini TV.
         self._restore_fullscreen_video()
+        self.apply_live_fonts()
 
     # ---------------------------------------------------------- mini TV
     def _video_instance(self):

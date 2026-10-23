@@ -38,6 +38,7 @@ FONT_PATH = os.path.join(PLUGIN_PATH, "fonts")
 # Fonts shipped with the plugin.  The key is the value stored in the settings;
 # the tuple is (file name, alias registered with Enigma2).
 FONT_FILES = {
+    "dejavu": ("DejaVuSans.ttf", "IPTVPlayerPro_DejaVu"),
     "bein": ("beIN Normal.ttf", "IPTVPlayerPro_beIN"),
     "premier": ("Premier_League.ttf", "IPTVPlayerPro_Premier"),
     "cairo": ("Cairo-Regular.ttf", "IPTVPlayerPro_Cairo"),
@@ -48,8 +49,14 @@ FONT_FILES = {
     "lemonada": ("Lemonada-Regular.ttf", "IPTVPlayerPro_Lemonada"),
 }
 
+# Families that ship a real bold face.  Enigma2 selects a font by alias, so
+# register the bold file separately and let font() use it for bold text.
+FONT_BOLD_FILES = {
+    "dejavu": ("DejaVuSans-Bold.ttf", "IPTVPlayerPro_DejaVu_Bold"),
+}
+
 # Display order in Settings.  A tuple keeps the order stable on Python 2.
-FONT_ORDER = ("bein", "premier", "cairo", "tajawal", "almarai",
+FONT_ORDER = ("dejavu", "bein", "premier", "cairo", "tajawal", "almarai",
               "changa", "elmessiri", "lemonada")
 
 WHITE = "#ffffff"
@@ -71,7 +78,9 @@ LIVE_ACCENT = "#f5c84b"
 _PIXMAPS = {}
 _FONTS = {}
 _ACTIVE_FONT = None
+_ACTIVE_BOLD_FONT = None
 _REGISTERED_FONTS = set()
+_REGISTERED_BOLD_FONTS = set()
 
 
 def image(name):
@@ -91,51 +100,66 @@ def pixmap(name, cache=True):
     return LoadPixmap(path)
 
 
-def register_fonts():
-    """Register the custom fonts bundled with the plugin."""
-    if len(_REGISTERED_FONTS) >= len(FONT_FILES):
-        return
+def _add_font(filename, alias):
+    """Register one bundled font face with Enigma2."""
     try:
         from enigma import addFont
     except Exception:
+        return False
+    path = os.path.join(FONT_PATH, filename)
+    if not os.path.isfile(path):
+        return False
+    try:
+        addFont(path, alias, 100, False, 0)
+        return True
+    except Exception:
+        # Older Enigma2 versions expose addFont with four arguments.
+        try:
+            addFont(path, alias, 100, 0)
+            return True
+        except Exception:
+            return False
+
+
+def register_fonts():
+    """Register the custom fonts bundled with the plugin."""
+    if (len(_REGISTERED_FONTS) >= len(FONT_FILES) and
+            len(_REGISTERED_BOLD_FONTS) >= len(FONT_BOLD_FILES)):
         return
     for key, (filename, alias) in FONT_FILES.items():
-        if key in _REGISTERED_FONTS:
-            continue
-        path = os.path.join(FONT_PATH, filename)
-        if not os.path.isfile(path):
-            continue
-        try:
-            addFont(path, alias, 100, False, 0)
+        if key not in _REGISTERED_FONTS and _add_font(filename, alias):
             _REGISTERED_FONTS.add(key)
-        except Exception:
-            # Older Enigma2 versions expose addFont with four arguments.
-            try:
-                addFont(path, alias, 100, 0)
-                _REGISTERED_FONTS.add(key)
-            except Exception:
-                pass
+    for key, (filename, alias) in FONT_BOLD_FILES.items():
+        if key not in _REGISTERED_BOLD_FONTS and _add_font(filename, alias):
+            _REGISTERED_BOLD_FONTS.add(key)
 
 
 def set_active_font(key):
     """Select the font used by the plugin's list entries.
 
-    ``key`` is one of the values stored in settings: ``default``, ``bein``,
-    ``premier`` or one of the additional bundled fonts.  Unknown or
+    ``key`` is one of the values stored in settings: ``default``, ``dejavu``,
+    ``bein``, ``premier`` or one of the additional bundled fonts.  Unknown or
     unavailable fonts fall back to the receiver's default face.
     """
-    global _ACTIVE_FONT
+    global _ACTIVE_FONT, _ACTIVE_BOLD_FONT
     if key not in FONT_FILES:
         _ACTIVE_FONT = None
+        _ACTIVE_BOLD_FONT = None
         return None
     register_fonts()
-    alias = FONT_FILES[key][1] if key in _REGISTERED_FONTS else None
-    _ACTIVE_FONT = alias
-    return alias
+    _ACTIVE_FONT = FONT_FILES[key][1] if key in _REGISTERED_FONTS else None
+    bold = FONT_BOLD_FILES.get(key)
+    _ACTIVE_BOLD_FONT = (bold[1] if bold and key in _REGISTERED_BOLD_FONTS
+                         else None)
+    return _ACTIVE_FONT
 
 
 def active_font():
     return _ACTIVE_FONT
+
+
+def active_bold_font():
+    return _ACTIVE_BOLD_FONT
 
 
 def skin_factor():
@@ -148,7 +172,12 @@ def skin_factor():
 
 
 def font(size, bold=False, font_name=None):
-    name = font_name or _ACTIVE_FONT or ("Bold" if bold else "Regular")
+    if font_name:
+        name = font_name
+    elif bold and _ACTIVE_BOLD_FONT:
+        name = _ACTIVE_BOLD_FONT
+    else:
+        name = _ACTIVE_FONT or ("Bold" if bold else "Regular")
     key = (size, name)
     ptr = _FONTS.get(key)
     if ptr is None:

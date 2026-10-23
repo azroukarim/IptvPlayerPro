@@ -12,6 +12,7 @@ from .base import (FONT_ORDER, ListScreen, LiveList, font, info_box,
 
 FONT_CHOICES = ["default"] + list(FONT_ORDER)
 FONT_LABELS = {
+    "dejavu": u"DejaVu",
     "bein": u"beIN (AR/EN)",
     "premier": u"Premier League (EN)",
     "cairo": u"Cairo",

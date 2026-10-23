@@ -180,7 +180,7 @@ http://<عنوان-الرسيفر>:8099/
 | الإعداد | الوصف |
 |---|---|
 | اللغة | العربية أو الإنجليزية |
-| الخط | خط القوائم: الافتراضي، **beIN**، **Premier League**، **Cairo**، **Tajawal**، **Almarai**، **Changa**، **El Messiri**، **Lemonada** |
+| الخط | خط القوائم: الافتراضي، **DejaVu**، **beIN**، **Premier League**، **Cairo**، **Tajawal**، **Almarai**، **Changa**، **El Messiri**، **Lemonada** |
 | محرك البث | `4097` GStreamer (الافتراضي)، `5001`/`5002` لـ exteplayer3، أو `1` DVB |
 | مهلة HTTP | مدة انتظار الشبكة بالثواني |
 | إخفاء أقسام البالغين | استبعاد الأقسام المصنفة Adult |
@@ -195,7 +195,7 @@ http://<عنوان-الرسيفر>:8099/
 | عنوان واجهة الويب | عرض روابط الوصول من المتصفح وحالة الخادم |
 | حذف الكاش | حذف القوائم والشعارات المؤقتة |
 
-> خطوط **beIN** و**Cairo** و**Tajawal** و**Almarai** و**Changa** و**El Messiri** و**Lemonada** تدعم العربية والإنجليزية، أما **Premier League** فإنجليزي فقط. الخطوط الجديدة مضمّنة مع تراخيص OFL، وتمت مواءمة أشكال الحروف العربية المنفصلة مع محرّك Enigma2، ويُطبّق الخط مباشرة على قوائم البلوجين وعناوينها ويُحفظ مع بقية الإعدادات.
+> خطوط **DejaVu** و**beIN** و**Cairo** و**Tajawal** و**Almarai** و**Changa** و**El Messiri** و**Lemonada** تدعم العربية والإنجليزية، أما **Premier League** فإنجليزي فقط. خط **DejaVu** هو الأقرب لخط كلمة **Categories** في واجهة البث، ويأتي بنسختي Regular وBold: تُستخدم Bold للعناوين وأسماء القوائم وRegular للقيم. خط DejaVu مضمّن بترخيص Bitstream Vera، وخطوط Cairo وTajawal وAlmarai وChanga وEl Messiri وLemonada بتراخيص OFL، أما beIN وPremier League فمضمّنان بشكل منفصل. تمت مواءمة أشكال الحروف العربية المنفصلة مع محرّك Enigma2، ويُطبّق الخط مباشرة على قوائم البلوجين وعناوينها ويُحفظ مع بقية الإعدادات.
 
 إذا لم يعمل البث على `4097`، جرّب `5001` أو `5002` بعد التأكد من تثبيت **exteplayer3** على الصورة.
 
@@ -228,7 +228,7 @@ python build_tar.py
 
 ```
 dist/IPTVPlayerPro.tar.gz
-dist/IPTVPlayerPro_1.5.1.tar.gz
+dist/IPTVPlayerPro_1.5.2.tar.gz
 ```
 
 ### الاختبارات
