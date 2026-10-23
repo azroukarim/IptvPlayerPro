@@ -14,7 +14,7 @@
 #    --help           show this help
 # ============================================================
 
-VERSION="1.5.2"
+VERSION="1.5.3"
 TAR_NAME="IPTVPlayerPro.tar.gz"
 BASE_RAW="https://raw.githubusercontent.com/azroukarim/IptvPlayerPro/main/dist"
 BASE_GH="https://github.com/azroukarim/IptvPlayerPro/raw/main/dist"

@@ -395,7 +395,6 @@ class LiveBrowserScreen(BackendScreen):
         self["previewMeta"] = Label()
         self["previewEpgNow"] = Label()
         self["previewEpgNext"] = Label()
-        self["previewUrl"] = Label()
         self["previewFav"] = Label()
         self["playBg"] = Pixmap()
         self["playLabel"] = Label()
@@ -485,7 +484,6 @@ class LiveBrowserScreen(BackendScreen):
         self["previewMeta"].setText(u"")
         self["previewEpgNow"].setText(u"")
         self["previewEpgNext"].setText(u"")
-        self["previewUrl"].setText(u"")
         self["previewFav"].setText(u"")
         self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
         self["status"].setText(u"")
@@ -1225,7 +1223,8 @@ class LiveBrowserScreen(BackendScreen):
         self["previewEpgNext"].setText(next_text)
         self._set_visible("previewEpgNow", bool(now_text))
         self._set_visible("previewEpgNext", bool(next_text))
-        self._set_visible("previewUrl", not (now_text or next_text))
+        # The stream URL is intentionally not shown under the mini TV.  That
+        # area is reserved for the channel name, its group and the EPG.
 
     def _backend_epg_urls(self):
         method = getattr(self.backend, "epg_urls", None)
@@ -1336,7 +1335,6 @@ class LiveBrowserScreen(BackendScreen):
             self["previewMeta"].setText(u"{0} / {1} {2}".format(
                 self.loaded_count(), self.total, _("channels")))
             self._set_preview_epg(None)
-            self["previewUrl"].setText(u"")
             self["previewFav"].setText(u"")
             self["previewLogo"].instance.setPixmap(pixmap("more.png"))
             self["playLabel"].setText(u"OK  " + _("Load more ..."))
@@ -1348,7 +1346,6 @@ class LiveBrowserScreen(BackendScreen):
             self["previewName"].setText(to_text(name))
             self["previewMeta"].setText(_("No channels"))
             self._set_preview_epg(None)
-            self["previewUrl"].setText(u"")
             self["previewFav"].setText(u"")
             self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
             self["playLabel"].setText(u"OK  " + _("Play"))
@@ -1369,10 +1366,6 @@ class LiveBrowserScreen(BackendScreen):
         self["previewName"].setText(item.get("name") or u"")
         self["previewMeta"].setText(u"  \u2022  ".join(meta))
         self._set_preview_epg(item)
-        url = to_text(item.get("url") or item.get("cmd") or u"")
-        if len(url) > 62:
-            url = url[:59] + u"..."
-        self["previewUrl"].setText(url)
         self["previewFav"].setText(
             u"\u2605 " + _("Favorite") if favorite else u"")
         self["previewLogo"].instance.setPixmap(self._channel_icon(item))

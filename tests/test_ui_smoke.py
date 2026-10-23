@@ -699,7 +699,8 @@ def main():
         assert live["previewName"].text
         assert "News Now" in live["previewEpgNow"].text
         assert "News Next" in live["previewEpgNext"].text
-        assert live["previewUrl"].visible is False
+        # The stream URL is not part of the mini-TV information area.
+        assert live.get("previewUrl") is None
         assert live._epg_timer is not None and live._epg_timer.running
         assert live._epg_timer.interval == 30000
         live.key_right()
@@ -840,6 +841,7 @@ def main():
                      "previewName", "previewVideo", "previewEpgNow",
                      "previewEpgNext", "playBg", "favBg", "hint"):
             assert name in skin_names, name
+        assert "previewUrl" not in skin_names
 
         player_skin = ET.fromstring(PLAYER_SKIN)
         # Enigma2 stores transparency in the alpha byte (0x00 opaque,

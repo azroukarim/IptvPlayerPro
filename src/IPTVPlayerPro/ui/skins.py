@@ -74,7 +74,6 @@ LIVE_SKIN = """
     <widget name="previewMeta" position="744,462" size="512,28" font="Regular;17" halign="left" valign="center" foregroundColor="#c7c4ef" transparent="1" />
     <widget name="previewEpgNow" position="744,490" size="512,30" font="Regular;18" halign="left" valign="center" foregroundColor="#f5c84b" transparent="1" />
     <widget name="previewEpgNext" position="744,520" size="512,24" font="Regular;15" halign="left" valign="center" foregroundColor="#aeb2d6" transparent="1" />
-    <widget name="previewUrl" position="744,492" size="512,44" font="Regular;14" halign="left" valign="top" foregroundColor="#858bb8" transparent="1" />
     <widget name="previewFav" position="744,548" size="512,28" font="Regular;17" halign="left" valign="center" foregroundColor="#f5c84b" transparent="1" />
 
     <widget name="playBg" position="744,610" size="230,48" alphatest="blend" scale="1" />
