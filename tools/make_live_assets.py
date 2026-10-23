@@ -5,7 +5,7 @@ from __future__ import print_function
 
 import os
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "src", "IPTVPlayerPro", "images")
@@ -52,36 +52,35 @@ def rounded_panel(size, fill, outline, radius=14, width=2):
     return image
 
 
+def gradient_panel(size, top, bottom, outline, width=1):
+    """A main-menu style red gradient with a thin edge."""
+    image = vertical_gradient(size, top, bottom).convert("RGBA")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([0, 0, size[0] - 1, size[1] - 1],
+                   outline=outline, width=width)
+    return image
+
+
 def make_background():
-    image = vertical_gradient((1280, 720), (9, 11, 30), (47, 10, 42)).convert("RGBA")
-
-    def glow(box, color, blur, alpha):
-        mask = Image.new("L", (1280, 720), 0)
-        ImageDraw.Draw(mask).ellipse(box, fill=255)
-        mask = mask.filter(ImageFilter.GaussianBlur(blur)).point(
-            lambda value: int(value * alpha))
-        layer = Image.new("RGBA", (1280, 720), color + (255,))
-        return Image.composite(layer, image, mask)
-
-    image = glow([-260, 80, 700, 760], (65, 47, 143), 150, 0.55)
-    image = glow([620, -180, 1500, 560], (24, 26, 88), 180, 0.45)
-    image = glow([520, 380, 1380, 880], (126, 20, 76), 170, 0.40)
-    image = glow([200, 500, 1100, 900], (77, 21, 66), 120, 0.28)
-
-    # A subtle vignette keeps the list text readable.
-    vignette = Image.radial_gradient("L").resize((1280, 720))
-    dark = Image.new("RGBA", (1280, 720), (0, 0, 0, 255))
-    mask = vignette.point(lambda value: int(value * 0.32))
-    image = Image.composite(dark, image, mask)
+    # Reuse the main-menu background so both screens share the same
+    # near-black base and red glow.  Only the mini-TV cut-out differs.
+    base_path = os.path.join(OUT, "bg.png")
+    if os.path.isfile(base_path):
+        image = Image.open(base_path).convert("RGBA")
+        if image.size != (1280, 720):
+            image = image.resize((1280, 720), Image.LANCZOS)
+    else:
+        image = vertical_gradient((1280, 720), (10, 10, 17),
+                                  (47, 10, 16)).convert("RGBA")
     clear_box(image, VIDEO_BOX)
     save(image, "live_bg.png")
 
 
 def make_header():
-    image = vertical_gradient((1280, 80), (28, 30, 78), (12, 14, 35)).convert("RGBA")
+    image = vertical_gradient((1280, 80), (38, 12, 16), (12, 7, 9)).convert("RGBA")
     draw = ImageDraw.Draw(image)
-    draw.line([(0, 79), (1280, 79)], fill=(83, 82, 142, 255), width=1)
-    draw.rectangle([0, 0, 1280, 2], fill=(81, 68, 147, 255))
+    draw.line([(0, 79), (1280, 79)], fill=(120, 24, 30, 255), width=1)
+    draw.rectangle([0, 0, 1280, 2], fill=(150, 30, 38, 255))
     save(image, "live_header.png")
 
 
@@ -89,11 +88,12 @@ def make_panels():
     # Keep every panel opaque.  The only transparent area must be the video
     # cut-out itself; otherwise the TV service that was playing before the
     # plugin opened bleeds through the OSD as a blurred ghost image.
-    save(rounded_panel((300, 640), (10, 13, 34, 255), (54, 57, 103, 255), 0, 0),
+    border = (92, 13, 13, 255)
+    save(gradient_panel((300, 640), (55, 8, 10), (26, 5, 6), border, 1),
          "live_panel_left.png")
-    save(rounded_panel((420, 640), (15, 17, 43, 255), (54, 57, 103, 255), 0, 0),
+    save(gradient_panel((420, 640), (62, 9, 12), (30, 6, 8), border, 1),
          "live_panel_mid.png")
-    right_panel = rounded_panel((560, 640), (12, 14, 38, 255), (54, 57, 103, 255), 0, 0)
+    right_panel = gradient_panel((560, 640), (52, 8, 10), (24, 5, 6), border, 1)
     clear_box(right_panel, RIGHT_PANEL_VIDEO_BOX)
     save(right_panel, "live_panel_right.png")
     # The idle placeholder covers the cut-out completely, so the previous
@@ -101,30 +101,30 @@ def make_panels():
     # Fill the whole rectangle (including the one-pixel edge) and draw the
     # rounded outline inside it; a transparent rim would let the old video
     # leak through as a thin bright frame.
-    preview = Image.new("RGBA", (512, 300), (4, 5, 12, 255))
+    preview = Image.new("RGBA", (512, 300), (8, 4, 6, 255))
     ImageDraw.Draw(preview).rounded_rectangle(
-        [1, 1, 510, 298], radius=14, outline=(54, 57, 103, 255), width=2)
+        [1, 1, 510, 298], radius=14, outline=(110, 22, 28, 255), width=2)
     save(preview, "live_preview.png")
-    save(rounded_panel((430, 42), (20, 23, 57, 255), (100, 98, 173, 255), 21, 2),
+    save(rounded_panel((430, 42), (30, 10, 13, 255), (150, 32, 40, 255), 21, 2),
          "live_search.png")
-    save(rounded_panel((230, 48), (75, 64, 139, 255), (139, 124, 205, 255), 9, 2),
+    save(rounded_panel((230, 48), (120, 16, 16, 255), (245, 245, 245, 255), 9, 2),
          "live_button.png")
-    save(rounded_panel((266, 48), (57, 49, 110, 255), (118, 108, 177, 255), 9, 2),
+    save(rounded_panel((266, 48), (74, 9, 9, 255), (140, 30, 36, 255), 9, 2),
          "live_button_dark.png")
 
 
 def make_player_assets():
     """Assets for the full-screen Live TV player and its information bar."""
-    top = vertical_gradient((1280, 70), (30, 33, 88), (10, 12, 32)).convert("RGBA")
+    top = vertical_gradient((1280, 70), (38, 12, 16), (12, 7, 9)).convert("RGBA")
     draw = ImageDraw.Draw(top)
-    draw.rectangle([0, 0, 1279, 1], fill=(65, 59, 127, 255))
-    draw.line([(0, 68), (1279, 68)], fill=(91, 89, 150, 255), width=2)
+    draw.rectangle([0, 0, 1279, 1], fill=(150, 30, 38, 255))
+    draw.line([(0, 68), (1279, 68)], fill=(120, 24, 30, 255), width=2)
     save(top, "player_top.png")
 
-    bottom = vertical_gradient((1280, 200), (12, 14, 36), (3, 4, 10)).convert("RGBA")
+    bottom = vertical_gradient((1280, 200), (18, 8, 10), (4, 2, 3)).convert("RGBA")
     draw = ImageDraw.Draw(bottom)
-    draw.rectangle([0, 0, 1279, 1], fill=(88, 84, 148, 255))
-    draw.line([(0, 136), (1279, 136)], fill=(172, 170, 214, 255), width=1)
+    draw.rectangle([0, 0, 1279, 1], fill=(120, 24, 30, 255))
+    draw.line([(0, 136), (1279, 136)], fill=(150, 60, 64, 255), width=1)
     save(bottom, "player_bottom.png")
 
     live = Image.new("RGBA", (72, 30), (0, 0, 0, 0))
@@ -133,8 +133,8 @@ def make_player_assets():
         outline=(255, 122, 142, 255), width=1)
     save(live, "player_live.png")
 
-    save(rounded_panel((104, 104), (18, 20, 42, 255),
-                       (70, 72, 130, 255), 12, 2),
+    save(rounded_panel((104, 104), (20, 9, 12, 255),
+                       (92, 20, 26, 255), 12, 2),
          "player_logo_bg.png")
 
 

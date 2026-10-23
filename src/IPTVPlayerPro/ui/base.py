@@ -67,13 +67,13 @@ ROW_BG = "#15151f"
 ROW_SEL = "#7d0f0f"
 ROW_BG_ALT = "#111119"
 
-# Three-column live browser.  The colours stay close to the supplied Ibo
-# Player Pro mock-up while keeping enough contrast on small TV panels.
-LIVE_ROW_BG = "#171a3f"
-LIVE_ROW_SEL = "#5d4a9f"
-LIVE_TEXT = "#f4f3ff"
-LIVE_MUTED = "#aeb2d6"
-LIVE_ACCENT = "#f5c84b"
+# Three-column live browser.  Keep the live screen on the same deep-red
+# palette as the main menu so the mini TV, lists and panels feel like one UI.
+LIVE_ROW_BG = "#1f0d11"
+LIVE_ROW_SEL = "#7d0f0f"
+LIVE_TEXT = "#ffffff"
+LIVE_MUTED = "#c9a7a7"
+LIVE_ACCENT = "#f0b34a"
 
 _PIXMAPS = {}
 _FONTS = {}
