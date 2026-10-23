@@ -18,7 +18,7 @@ from .util import (atomic_write, ensure_dir, md5, now, read_json, safe_int,
 _STORE_LOCK = threading.RLock()
 
 
-VERSION = "1.5.6"
+VERSION = "1.5.7"
 
 # All persistent plugin data (config.json, m3u.txt and mac.txt) lives in one
 # folder.  Flash is preferred because it is always mounted; HDD and USB are

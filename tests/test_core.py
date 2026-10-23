@@ -366,6 +366,61 @@ def test_mag(tmp):
     server.shutdown()
 
 
+def test_mag_sections(tmp):
+    print("[mag sections]")
+    portal = MockPortal()
+    server = HTTPServer(("127.0.0.1", 0), make_handler(portal))
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+    url = "http://127.0.0.1:{0}/portal.php".format(server.server_port)
+    try:
+        conf = os.path.join(tmp, "mag-sections")
+        store = Store(config_dir=conf, cache_dir=os.path.join(tmp, "mag-sections-cache"))
+        store.set_setting("m3u_file", os.path.join(conf, "m3u.txt"))
+        store.set_setting("mac_file", os.path.join(conf, "mac.txt"))
+        source = store.new_source("mag", "Sections", url, "00:1A:79:11:22:33")
+        backend = MagBackend(source, store)
+
+        check(backend.prepare_section("movies") is True, "movies categories prepared")
+        check(backend.is_vod_categories_ready(), "movie categories ready")
+        check(not backend.is_vod_ready(), "movie items stay lazy")
+        check(not backend.is_ready(), "live not loaded by movies")
+        categories = backend.vod_categories()
+        check([c["name"] for c in categories if c["id"] == "g:10"] == ["Action"],
+              "movie category visible")
+        vod_page_requests = [request for request in portal.requests
+                             if request.get("action") == "get_ordered_list" and
+                             request.get("type") == "vod"]
+        check(not vod_page_requests, "movie items were not prefetched")
+
+        before = len(portal.requests)
+        check(backend.prepare_section("movies") is True, "movies prepare is instant")
+        check(len(portal.requests) == before, "cached categories avoid another request")
+
+        check(backend.prepare_section("live") is True, "live prepared")
+        check(backend.is_live_ready(), "live ready")
+        check(backend.is_vod_categories_ready(), "live prepare preserves movie categories")
+        check(backend.prepare_section("series") is True, "series categories prepared")
+        check(backend.is_series_categories_ready(), "series categories ready")
+        check(not backend.is_series_ready(), "series items stay lazy")
+
+        items, total = backend.vod_items("all")
+        check(total == 1 and items[0]["name"] == "Movie A", "movie items lazy load")
+        series, total = backend.series_items("all")
+        check(total == 1 and series[0]["name"] == "Portal Series", "series items lazy load")
+
+        # A new backend must reuse the partial cache instead of downloading
+        # the whole portal again.
+        reloaded = MagBackend(store.get_source(source["id"]), store)
+        before = len(portal.requests)
+        check(reloaded.prepare_section("movies") is True, "partial cache loads")
+        check(reloaded.is_vod_categories_ready(), "partial cache keeps categories ready")
+        check(len(portal.requests) == before, "partial cache avoids network")
+    finally:
+        server.shutdown()
+
+
 def test_epg(tmp):
     print("[epg]")
     check(parse_xmltv_time("20261022120000 +0200") ==
@@ -478,6 +533,7 @@ def main():
         test_data_folder(tmp)
         test_prefetch_progress(tmp)
         test_mag(tmp)
+        test_mag_sections(tmp)
         test_epg(tmp)
         print("\nAll core tests passed.")
     finally:

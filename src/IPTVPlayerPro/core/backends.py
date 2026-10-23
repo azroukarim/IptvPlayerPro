@@ -88,6 +88,24 @@ def _notify(progress, text, percent=None):
         progress(text)
 
 
+def _section_names(sections):
+    """Normalize a section request to live/vod/series."""
+    if sections is None:
+        return set(("live", "vod", "series"))
+    if not isinstance(sections, (list, tuple, set)):
+        sections = (sections,)
+    result = set()
+    for section in sections:
+        value = to_text(section).strip().lower()
+        if value in ("live", "tv"):
+            result.add("live")
+        elif value in ("vod", "movie", "movies"):
+            result.add("vod")
+        elif value in ("series", "serie"):
+            result.add("series")
+    return result or set(("live", "vod", "series"))
+
+
 # Parsing a large playlist takes seconds on a receiver, so the parsed
 # catalogue must survive the screen changes.  One backend instance is kept
 # per source and reused by every screen.
@@ -160,6 +178,11 @@ class BaseBackend(object):
         self.vod = []
         self.series = []
         self.channels = []
+        self.live_ready = False
+        self.vod_ready = False
+        self.series_ready = False
+        self.vod_categories_ready = False
+        self.series_categories_ready = False
         self._cache_stamp = None
 
     # ------------------------------------------------------------------ api
@@ -170,11 +193,29 @@ class BaseBackend(object):
     def is_ready(self):
         return False
 
+    def is_live_ready(self):
+        return self.is_ready()
+
     def is_vod_ready(self):
         return self.is_ready()
 
     def is_series_ready(self):
         return self.is_ready()
+
+    def is_vod_categories_ready(self):
+        return self.is_ready()
+
+    def is_series_categories_ready(self):
+        return self.is_ready()
+
+    def prepare_section(self, section, progress=None, force=False):
+        """Prepare only the section the user is opening.
+
+        M3U already downloads the whole playlist in one request.  MAG portals
+        override this to avoid fetching the complete VOD/series catalogue
+        before showing a screen.
+        """
+        return self.refresh(force=force, progress=progress)
 
     def refresh(self, force=False, progress=None):
         return False
@@ -394,6 +435,9 @@ class M3UBackend(BaseBackend):
         self._apply(catalogue)
         _notify(progress, _("Saving playlist ..."), 85)
         self.store.save_cache(self.source_id, catalogue)
+        # The file timestamp changed.  Without this the shared backend would
+        # invalidate itself immediately after its own successful refresh.
+        self.mark_cache_stamp()
         if force:
             # Channel ids may have changed, so an old mapping cannot be trusted.
             self.store.clear_epg_cache(self.source_id)
@@ -592,8 +636,11 @@ class MagBackend(BaseBackend):
         self.channels = []
         self.vod = []
         self.series = []
+        self.live_ready = False
         self.vod_ready = False
         self.series_ready = False
+        self.vod_categories_ready = False
+        self.series_categories_ready = False
         self.loaded = False
         self._cache_ts = 0
         self._vod_cache = {}
@@ -614,6 +661,13 @@ class MagBackend(BaseBackend):
             )
         return self.client
 
+    def _client_ready(self):
+        """Return a client with a valid portal token for lazy item loading."""
+        client = self._make_client()
+        if not client.token:
+            client.handshake()
+        return client
+
     def _cache_usable(self, payload=None):
         hours = self.cache_hours()
         if hours <= 0:
@@ -623,7 +677,10 @@ class MagBackend(BaseBackend):
         return age >= 0 and age <= hours * 3600
 
     def is_ready(self):
-        return self.loaded
+        return bool(self.loaded and self.live_ready)
+
+    def is_live_ready(self):
+        return self.is_ready()
 
     def is_vod_ready(self):
         return bool(self.loaded and self.vod_ready and self.vod)
@@ -631,38 +688,125 @@ class MagBackend(BaseBackend):
     def is_series_ready(self):
         return bool(self.loaded and self.series_ready and self.series)
 
-    def refresh(self, force=False, progress=None):
-        if self.loaded and not force:
+    def is_vod_categories_ready(self):
+        return bool(self.loaded and self.vod_categories_ready)
+
+    def is_series_categories_ready(self):
+        return bool(self.loaded and self.series_categories_ready)
+
+    def refresh(self, force=False, progress=None, sections=None,
+                categories_only=False):
+        sections = _section_names(sections)
+        if self.loaded and not force and self._sections_ready(sections, categories_only):
             return True
         with _refresh_lock(self.source_id):
-            return self._refresh_locked(force, progress)
+            return self._refresh_locked(force, progress, sections, categories_only)
 
-    def _refresh_locked(self, force=False, progress=None):
-        payload = None if force else self.store.load_cache(self.source_id)
-        if payload and payload.get("kind") == "mag" and self._cache_usable(payload):
+    def _sections_ready(self, sections, categories_only=False):
+        for section in sections:
+            if section == "live":
+                if not self.live_ready:
+                    return False
+            elif section == "vod":
+                if categories_only:
+                    if not self.vod_categories_ready:
+                        return False
+                elif not (self.vod_ready and self.vod_categories_ready):
+                    return False
+            elif section == "series":
+                if categories_only:
+                    if not self.series_categories_ready:
+                        return False
+                elif not (self.series_ready and self.series_categories_ready):
+                    return False
+        return True
+
+    def prepare_section(self, section, progress=None, force=False):
+        """Prepare just enough data for the selected screen.
+
+        Live TV only needs the channel list.  Movies and Series only need the
+        category list; their item lists are loaded lazily by the browser.  The
+        old behaviour downloaded every VOD and series page before opening the
+        first screen, which could take minutes on large portals.
+        """
+        value = to_text(section).strip().lower()
+        if value in ("live", "tv"):
+            return self.refresh(force=force, progress=progress, sections=("live",))
+        if value in ("movies", "movie", "vod"):
+            return self.refresh(force=force, progress=progress, sections=("vod",),
+                                categories_only=True)
+        if value in ("series", "serie"):
+            return self.refresh(force=force, progress=progress, sections=("series",),
+                                categories_only=True)
+        return self.refresh(force=force, progress=progress)
+
+    def _refresh_locked(self, force=False, progress=None, sections=None,
+                        categories_only=False):
+        sections = _section_names(sections)
+        payload = self.store.load_cache(self.source_id)
+        if payload and payload.get("kind") == "mag":
+            # Keep whatever sections were already cached.  A section refresh
+            # must not wipe the other sections just because they were not
+            # requested this time.
             self._apply(payload)
-            if not self.channels:
-                force = True
-            elif not self.vod_ready or not self.series_ready:
-                pass
-            else:
-                return True
+            if force or not self._cache_usable(payload):
+                if "live" in sections:
+                    self.live_ready = False
+                if "vod" in sections:
+                    self.vod_categories_ready = False
+                    if not categories_only:
+                        self.vod_ready = False
+                if "series" in sections:
+                    self.series_categories_ready = False
+                    if not categories_only:
+                        self.series_ready = False
+        if not force and self._sections_ready(sections, categories_only):
+            return True
+
+        need_live = "live" in sections and (force or not self.live_ready)
+        need_vod = "vod" in sections and (
+            force or not self.vod_categories_ready or
+            (not categories_only and not self.vod_ready))
+        need_series = "series" in sections and (
+            force or not self.series_categories_ready or
+            (not categories_only and not self.series_ready))
+        need_vod_items = (need_vod and not categories_only and
+                          (force or not self.vod_ready))
+        need_series_items = (need_series and not categories_only and
+                             (force or not self.series_ready))
+        if not need_live and not need_vod and not need_series:
+            return True
+
         client = self._make_client()
         _notify(progress, _("Connecting to the portal ..."), 2)
         try:
-            client.auth()
+            if not client.token or force:
+                client.auth()
+            else:
+                client.handshake()
             _notify(progress, _("Reading portal categories ..."), 6)
-            genres_itv = client.itv_genres()
-            genres_vod = client.vod_categories()
-            self.genres_itv = genres_itv
-            self.genres_vod = genres_vod
+            if need_live:
+                self.genres_itv = client.itv_genres()
+            if (need_vod or need_series) and (force or not self.genres_vod):
+                self.genres_vod = client.vod_categories()
 
+            genres_vod = self.genres_vod
             channels_res = []
             vod_res = []
             series_res = []
+            live_ok = [False]
+            vod_ok = [False]
+            series_ok = [False]
+            total = 0
+            if need_live:
+                total += 1
+            if need_vod_items:
+                total += max(1, len(genres_vod))
+            if need_series_items:
+                total += max(1, len(genres_vod))
             work = {
                 "done": 0,
-                "total": max(1, len(genres_vod)) * 2 + 1,
+                "total": max(1, total),
                 "lock": threading.Lock(),
             }
 
@@ -682,8 +826,8 @@ class MagBackend(BaseBackend):
                         raw_ch = c.all_channels()
                     except Exception:
                         raw_ch = []
-                    if not raw_ch and genres_itv:
-                        for g in genres_itv:
+                    if not raw_ch and self.genres_itv:
+                        for g in self.genres_itv:
                             gid = to_text(g.get("id"))
                             for p in range(1, 10):
                                 b, tot = c.ordered_list("itv", gid, p)
@@ -693,6 +837,7 @@ class MagBackend(BaseBackend):
                                 if tot and len(raw_ch) >= tot:
                                     break
                     channels_res.extend(raw_ch)
+                    live_ok[0] = True
                 except Exception as e:
                     _logger.warning("MAG live channels fetch failed: %s", e)
                 finally:
@@ -706,6 +851,7 @@ class MagBackend(BaseBackend):
                     items, _ = self._prefetch_catalogue(
                         c, "vod", genres_vod, progress, on_genre_done=_bump)
                     vod_res.extend(items)
+                    vod_ok[0] = True
                 except Exception as e:
                     _logger.warning("MAG VOD fetch failed: %s", e)
 
@@ -717,21 +863,25 @@ class MagBackend(BaseBackend):
                     items, _ = self._prefetch_catalogue(
                         c, "series", genres_vod, progress, on_genre_done=_bump)
                     series_res.extend(items)
+                    series_ok[0] = True
                 except Exception as e:
                     _logger.warning("MAG series fetch failed: %s", e)
 
-            t_live = threading.Thread(target=_fetch_live)
-            t_vod = threading.Thread(target=_fetch_vod)
-            t_series = threading.Thread(target=_fetch_series)
-
-            for t in (t_live, t_vod, t_series):
+            threads = []
+            if need_live:
+                threads.append(threading.Thread(target=_fetch_live))
+            if need_vod_items:
+                threads.append(threading.Thread(target=_fetch_vod))
+            if need_series_items:
+                threads.append(threading.Thread(target=_fetch_series))
+            for t in threads:
                 t.daemon = True
                 t.start()
-
-            for t in (t_live, t_vod, t_series):
+            for t in threads:
                 t.join()
 
             if not series_res and vod_res:
+                # Some portals only expose series as flagged VOD entries.
                 for item in vod_res:
                     if not item.get("series_flag"):
                         continue
@@ -739,41 +889,68 @@ class MagBackend(BaseBackend):
                     copy["kind"] = "series"
                     copy["groups"] = list(item.get("groups") or [item.get("group") or ""])
                     series_res.append(copy)
+                if series_res:
+                    series_ok[0] = True
+
+            if need_live and live_ok[0]:
+                self.channels = channels_res
+                self.live_ready = True
+            if need_vod:
+                self.vod_categories_ready = True
+                if need_vod_items and vod_ok[0]:
+                    self.vod = vod_res
+                    self.vod_ready = True
+            if need_series:
+                self.series_categories_ready = True
+                if need_series_items and series_ok[0]:
+                    self.series = series_res
+                    self.series_ready = True
 
             payload = {
                 "kind": "mag",
                 "ts": now(),
-                "genres_itv": genres_itv,
-                "genres_vod": genres_vod,
-                "channels": channels_res,
-                "vod": vod_res,
-                "series": series_res,
-                "vod_ready": True,
-                "series_ready": True,
+                "genres_itv": self.genres_itv,
+                "genres_vod": self.genres_vod,
+                "channels": self.channels,
+                "vod": self.vod,
+                "series": self.series,
+                "live_ready": self.live_ready,
+                "vod_ready": self.vod_ready,
+                "series_ready": self.series_ready,
+                "vod_categories_ready": self.vod_categories_ready,
+                "series_categories_ready": self.series_categories_ready,
                 "portal": client.portal,
                 "mac": client.mac,
             }
+            # Freshly downloaded channels are raw portal rows and must pass
+            # through _channel() to normalize logos/ids.  Channels preserved
+            # from the cache are already compact.
+            if not (need_live and live_ok[0]):
+                payload["channels_compact"] = True
             self._apply(payload)
-            _notify(progress, _("Saving portal data ..."), 92)
             payload["channels"] = self.channels
             payload["channels_compact"] = True
+            _notify(progress, _("Saving portal data ..."), 92)
             self.store.save_cache(self.source_id, payload)
-            if force:
+            self.mark_cache_stamp()
+            if force and need_live:
                 self.store.clear_epg_cache(self.source_id)
                 self._epg_guide = None
             info = client.account or {}
-            expires = _expiry_of(info)
-            status = "expired" if is_expired(expires) else ("active" if expires else "active")
-            self.store.update_info(
-                self.source_id,
-                channels=len(self.channels),
-                vod=len(self.vod),
-                series=len(self.series),
-                expires=expires,
-                status=status,
-                account_name=to_text(info.get("name") or ""),
-                updated=now(),
-            )
+            values = {"updated": now()}
+            if info:
+                expires = _expiry_of(info)
+                values["expires"] = expires
+                values["status"] = ("expired" if is_expired(expires)
+                                    else ("active" if expires else "active"))
+                values["account_name"] = to_text(info.get("name") or "")
+            if need_live:
+                values["channels"] = len(self.channels)
+            if need_vod_items:
+                values["vod"] = len(self.vod)
+            if need_series_items:
+                values["series"] = len(self.series)
+            self.store.update_info(self.source_id, **values)
             return True
         except MagError as error:
             self.error = to_text(error)
@@ -795,12 +972,26 @@ class MagBackend(BaseBackend):
                 self.channels.append(self._channel(raw, group, "live"))
         self.vod = payload.get("vod") or []
         self.series = payload.get("series") or []
+        self.live_ready = bool(payload.get("live_ready")) if "live_ready" in payload else bool(self.channels)
         self.vod_ready = bool(payload.get("vod_ready")) if "vod_ready" in payload else bool(self.vod)
         self.series_ready = bool(payload.get("series_ready")) if "series_ready" in payload else bool(self.series)
+        self.vod_categories_ready = (bool(payload.get("vod_categories_ready"))
+                                     if "vod_categories_ready" in payload
+                                     else bool(self.genres_vod))
+        self.series_categories_ready = (bool(payload.get("series_categories_ready"))
+                                        if "series_categories_ready" in payload
+                                        else bool(self.genres_vod))
         self._cache_ts = safe_int(payload.get("ts")) or now()
         self._rebuild_indexes()
         self.loaded = True
         self.mark_cache_stamp()
+
+    def invalidate(self):
+        BaseBackend.invalidate(self)
+        self.genres_itv = []
+        self.genres_vod = []
+        self._vod_cache = {}
+        self._series_cache = {}
 
     def _ensure_live_groups(self):
         if not self._live_groups and self.channels:
@@ -821,7 +1012,9 @@ class MagBackend(BaseBackend):
 
     def prefetch(self, progress=None, force=False):
         """Prepare complete catalogue (live TV, VOD, and series) simultaneously."""
-        if force or not self.loaded or not self.vod_ready or not self.series_ready:
+        if (force or not self.loaded or not self.live_ready or
+                not self.vod_ready or not self.series_ready or
+                not self.vod_categories_ready or not self.series_categories_ready):
             self.refresh(force=force, progress=progress)
         return self.counts()
 
@@ -953,6 +1146,7 @@ class MagBackend(BaseBackend):
         items, _ok = self._prefetch_catalogue(client, "vod", genres, progress)
         self.vod = items
         self.vod_ready = True
+        self.vod_categories_ready = True
         self._vod_groups = _build_group_index(self.vod, "")
         self._vod_cache = {}
 
@@ -970,6 +1164,7 @@ class MagBackend(BaseBackend):
                 items.append(copy)
         self.series = items
         self.series_ready = True
+        self.series_categories_ready = True
         self._series_groups = _build_group_index(self.series, "")
         self._series_cache = {}
 
@@ -983,12 +1178,16 @@ class MagBackend(BaseBackend):
             "channels_compact": True,
             "vod": self.vod,
             "series": self.series,
+            "live_ready": self.live_ready,
             "vod_ready": self.vod_ready,
             "series_ready": self.series_ready,
+            "vod_categories_ready": self.vod_categories_ready,
+            "series_categories_ready": self.series_categories_ready,
             "portal": self.source.get("url"),
             "mac": self.source.get("mac"),
         }
         self.store.save_cache(self.source_id, payload)
+        self.mark_cache_stamp()
 
     # ---------------------------------------------------------------- live
     def live_categories(self):
@@ -1031,8 +1230,9 @@ class MagBackend(BaseBackend):
             # Portal without get_all_channels: ask for the genre page by page.
             genre = category_id[2:] if category_id.startswith("g:") else category_id
             page = 1
+            client = self._client_ready()
             while page <= 8:
-                raws, total = self._make_client().ordered_list("itv", genre, page)
+                raws, total = client.ordered_list("itv", genre, page)
                 for raw in raws:
                     item = self._channel(raw, genre, "live")
                     if query and not _match(item.get("name"), query):
@@ -1081,7 +1281,10 @@ class MagBackend(BaseBackend):
                 continue
             genre_id = to_text(genre.get("id"))
             genre_name = to_text(genre.get("name") or "")
-            count = len(self._vod_groups.get(genre_id) or self._vod_groups.get(genre_name) or []) if self.vod_ready else 0
+            if self.vod_ready:
+                count = len(self._vod_groups.get(genre_id) or self._vod_groups.get(genre_name) or [])
+            else:
+                count = safe_int(genre.get("count"))
             categories.append(self._category("g:" + genre_id, genre["name"], count))
         return categories
 
@@ -1106,7 +1309,7 @@ class MagBackend(BaseBackend):
         key = "vod|{0}|{1}".format(genre, page)
         cached = self._vod_cache.get(key)
         if cached is None:
-            raws, total = self._make_client().ordered_list("vod", genre, page)
+            raws, total = self._client_ready().ordered_list("vod", genre, page)
             items = [self._vod(raw, genre, "vod") for raw in raws]
             self._vod_cache[key] = (items, total)
         else:
@@ -1150,7 +1353,10 @@ class MagBackend(BaseBackend):
                 continue
             genre_id = to_text(genre.get("id"))
             genre_name = to_text(genre.get("name") or "")
-            count = len(self._series_groups.get(genre_id) or self._series_groups.get(genre_name) or []) if self.series_ready else 0
+            if self.series_ready:
+                count = len(self._series_groups.get(genre_id) or self._series_groups.get(genre_name) or [])
+            else:
+                count = safe_int(genre.get("count"))
             categories.append(self._category("g:" + genre_id, genre["name"], count))
         return categories
 
@@ -1175,11 +1381,12 @@ class MagBackend(BaseBackend):
         key = "series|{0}|{1}".format(genre, page)
         cached = self._series_cache.get(key)
         if cached is None:
-            raws, total = self._make_client().series_page(genre, page)
+            client = self._client_ready()
+            raws, total = client.series_page(genre, page)
             items = [self._vod(raw, genre, "series") for raw in raws]
             if not items and page == 1:
                 # Portal without is_series support: filter the normal VOD list.
-                raws, total = self._make_client().ordered_list("vod", genre, page)
+                raws, total = client.ordered_list("vod", genre, page)
                 items = [self._vod(raw, genre, "series") for raw in raws
                          if safe_int(raw.get("is_series")) or raw.get("series")]
             self._series_cache[key] = (items, total)
@@ -1190,7 +1397,7 @@ class MagBackend(BaseBackend):
         return items, total
 
     def seasons(self, series_id):
-        client = self._make_client()
+        client = self._client_ready()
         raws, _total = client.series_page("*", 1, movie_id=series_id, season_id=0)
         seasons = []
         if raws and any(raw.get("series") for raw in raws):
@@ -1216,7 +1423,7 @@ class MagBackend(BaseBackend):
         return seasons
 
     def episodes(self, series_id, season_id, page=1):
-        client = self._make_client()
+        client = self._client_ready()
         raws, total = client.series_page("*", page, movie_id=series_id, season_id=season_id)
         items = []
         for raw in raws:

@@ -1,0 +1,650 @@
+# -*- coding: utf-8 -*-
+"""Shared UI building blocks for IPTV Player Pro."""
+
+from __future__ import absolute_import
+
+import os
+import threading
+import time
+
+from enigma import (RT_HALIGN_CENTER, RT_HALIGN_LEFT, RT_HALIGN_RIGHT,
+                    RT_VALIGN_CENTER, eListboxPythonMultiContent, ePicLoad,
+                    eServiceReference, eTimer, gFont)
+
+try:
+    from urllib.parse import quote
+except ImportError:  # Python 2
+    from urllib import quote
+
+from Components.ActionMap import HelpableActionMap
+from Components.Label import Label
+from Components.MenuList import MenuList
+from Components.MultiContent import (MultiContentEntryPixmapAlphaTest,
+                                     MultiContentEntryRectangle,
+                                     MultiContentEntryText)
+from Components.Pixmap import Pixmap
+from Screens.MessageBox import MessageBox
+from Screens.Screen import Screen
+from Tools.LoadPixmap import LoadPixmap
+
+from ..core.i18n import _
+from ..core.net import Http, NetError
+from ..core.util import md5, safe_int, stream_url_with_headers, to_text
+
+PLUGIN_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+IMAGE_PATH = os.path.join(PLUGIN_PATH, "images")
+
+WHITE = "#ffffff"
+GREY = "#b8b8b8"
+DIM = "#8a8a8a"
+RED = "#e0b0b0"
+ROW_BG = "#15151f"
+ROW_SEL = "#7d0f0f"
+ROW_BG_ALT = "#111119"
+
+# Three-column live browser.  The colours stay close to the supplied Ibo
+# Player Pro mock-up while keeping enough contrast on small TV panels.
+LIVE_ROW_BG = "#171a3f"
+LIVE_ROW_SEL = "#5d4a9f"
+LIVE_TEXT = "#f4f3ff"
+LIVE_MUTED = "#aeb2d6"
+LIVE_ACCENT = "#f5c84b"
+
+_PIXMAPS = {}
+_FONTS = {}
+
+
+def image(name):
+    return os.path.join(IMAGE_PATH, name)
+
+
+def pixmap(name, cache=True):
+    path = name if os.path.isabs(name) else image(name)
+    if cache:
+        ptr = _PIXMAPS.get(path)
+        if ptr is not None:
+            return ptr
+        ptr = LoadPixmap(path)
+        if ptr is not None:
+            _PIXMAPS[path] = ptr
+        return ptr
+    return LoadPixmap(path)
+
+
+def font(size, bold=False, font_name=None):
+    key = (size, bold, font_name)
+    ptr = _FONTS.get(key)
+    if ptr is None:
+        try:
+            font_basename = font_name or "Regular"
+            ptr = gFont(font_basename, size)
+        except Exception:
+            ptr = gFont("Regular", size)
+        _FONTS[key] = ptr
+    return ptr
+
+
+def set_background(screen, name="bg.png"):
+    widget = screen.get("bg")
+    if widget is not None:
+        widget.instance.setPixmap(pixmap(name))
+
+
+def set_logo(screen, name="logo_small.png"):
+    widget = screen.get("logo")
+    if widget is not None:
+        widget.instance.setPixmap(pixmap(name))
+
+
+class MultiList(MenuList):
+    """MultiContent list with the three fonts used by the plugin."""
+
+    def __init__(self, item_height=72):
+        MenuList.__init__(self, [], False, eListboxPythonMultiContent)
+        self.l.setItemHeight(item_height)
+        self.l.setFont(0, font(22))
+        self.l.setFont(1, font(16))
+        self.l.setFont(2, font(23, True))
+        self.l.setFont(3, font(26, True))
+
+
+class LiveList(MenuList):
+    """Compact list used by the three-column live browser."""
+
+    def __init__(self, item_height=58):
+        MenuList.__init__(self, [], False, eListboxPythonMultiContent)
+        self.l.setItemHeight(item_height)
+        self.l.setFont(0, font(18))
+        self.l.setFont(1, font(16))
+        # Category and channel names use a noticeably larger face so the
+        # three-column browser stays readable from a normal viewing distance.
+        self.l.setFont(2, font(24, True))
+        self.l.setFont(3, font(26, True))
+
+
+def category_entry(width, height, title, value=None):
+    """A clean category row with the channel count on the right."""
+    title = to_text(title)
+    value = to_text(value) if value else u""
+    entries = [
+        MultiContentEntryRectangle(
+            pos=(0, 1), size=(width, height - 2),
+            backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
+        )
+    ]
+    value_width = 66 if value else 0
+    entries.append(MultiContentEntryText(
+        pos=(16, 0), size=(width - 16 - value_width - 10, height),
+        font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+        text=title, color=LIVE_TEXT, color_sel=WHITE,
+    ))
+    if value:
+        entries.append(MultiContentEntryText(
+            pos=(width - value_width - 10, 0), size=(value_width, height),
+            font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            text=value, color=LIVE_MUTED, color_sel=WHITE,
+        ))
+    return entries
+
+
+def channel_entry(width, height, number, title, icon=None, favorite=False,
+                  bg=LIVE_ROW_BG, selected_bg=LIVE_ROW_SEL):
+    """A numbered channel row with a logo and an optional favourite star."""
+    title = to_text(title)
+    number = safe_int(number)
+    entries = [
+        MultiContentEntryRectangle(
+            pos=(0, 1), size=(width, height - 2),
+            backgroundColor=bg, backgroundColorSelected=selected_bg,
+        )
+    ]
+    number_text = u"{0:02d}".format(number) if number else u""
+    number_width = 42 if number_text else 0
+    if number_text:
+        entries.append(MultiContentEntryText(
+            pos=(width - number_width - 6, 0), size=(number_width, height),
+            font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            text=number_text, color=LIVE_MUTED, color_sel=WHITE,
+        ))
+    icon_x = 12
+    if icon is not None:
+        entries.append(MultiContentEntryPixmapAlphaTest(
+            pos=(icon_x, (height - 32) // 2), size=(32, 32), png=icon,
+        ))
+    text_x = icon_x + 44
+    badge_width = 26 if favorite else 0
+    text_width = max(40, width - text_x - number_width - badge_width - 12)
+    entries.append(MultiContentEntryText(
+        pos=(text_x, 0), size=(text_width, height),
+        font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+        text=title, color=LIVE_TEXT, color_sel=WHITE,
+    ))
+    if favorite:
+        entries.append(MultiContentEntryText(
+            pos=(width - number_width - badge_width - 12, 0),
+            size=(badge_width, height),
+            font=2, flags=RT_HALIGN_CENTER | RT_VALIGN_CENTER,
+            text=u"\u2605", color=LIVE_ACCENT, color_sel=WHITE,
+        ))
+    return entries
+
+
+
+def row_entry(width, height, title, subtitle=None, icon=None, icon_size=(44, 44),
+              value=None, badge=None, selected_bg=ROW_SEL, bg=ROW_BG):
+    title = to_text(title)
+    subtitle = to_text(subtitle) if subtitle else u""
+    value = to_text(value) if value else u""
+    badge = to_text(badge) if badge else u""
+    entries = [
+        MultiContentEntryRectangle(
+            pos=(0, 1), size=(width, height - 2),
+            backgroundColor=bg, backgroundColorSelected=selected_bg,
+        )
+    ]
+    text_x = 14
+    if icon is not None:
+        icon_w, icon_h = icon_size
+        entries.append(MultiContentEntryPixmapAlphaTest(
+            pos=(12, (height - icon_h) // 2), size=(icon_w, icon_h), png=icon,
+        ))
+        text_x = 12 + icon_w + 14
+    value_width = 0
+    if value:
+        value_width = min(300, max(90, len(to_text(value)) * 11 + 20))
+        entries.append(MultiContentEntryText(
+            pos=(width - value_width - 16, 0), size=(value_width, height),
+            font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            text=value, color="#cfcfcf", color_sel="#ffffff",
+        ))
+    badge_width = 0
+    if badge:
+        badge_width = 34
+        entries.append(MultiContentEntryText(
+            pos=(width - value_width - badge_width - 16, 0), size=(badge_width, height),
+            font=2, flags=RT_HALIGN_CENTER | RT_VALIGN_CENTER,
+            text=badge, color="#ffcc55", color_sel="#ffffff",
+        ))
+    text_width = width - text_x - value_width - badge_width - 24
+    if subtitle:
+        entries.append(MultiContentEntryText(
+            pos=(text_x, 7), size=(text_width, height - 34),
+            font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+            text=title, color=WHITE, color_sel=WHITE,
+        ))
+        entries.append(MultiContentEntryText(
+            pos=(text_x, height - 33), size=(text_width, 26),
+            font=1, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+            text=subtitle, color=GREY, color_sel="#f0dada",
+        ))
+    else:
+        entries.append(MultiContentEntryText(
+            pos=(text_x, 0), size=(text_width, height),
+            font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+            text=title, color=WHITE, color_sel=WHITE,
+        ))
+    return entries
+
+
+def label_entry(width, height, text, font_index=2, color=WHITE, align=RT_HALIGN_LEFT):
+    return [
+        MultiContentEntryText(
+            pos=(16, 0), size=(width - 32, height), font=font_index,
+            flags=align | RT_VALIGN_CENTER, text=text,
+            color=color, color_sel=color,
+        )
+    ]
+
+
+class AsyncScreen(Screen):
+    """Screen with a tiny helper to run blocking work in a thread.
+
+    Enigma2 screens inherit from ``dict``.  Never assign attributes such as
+    ``items``, ``keys`` or ``values`` on a screen: they hide the inherited
+    ``dict`` methods, and ``Screen.doClose()`` calls ``self.items()`` while
+    deleting the GUI.  Use a distinct name like ``browser_items`` instead.
+    """
+
+    def __init__(self, session):
+        Screen.__init__(self, session)
+        self._alive = True
+        self._timers = []
+        self.onClose.append(self._async_cleanup)
+
+    def _async_cleanup(self):
+        self._alive = False
+        for timer in self._timers:
+            try:
+                timer.stop()
+            except Exception:
+                pass
+        self._timers = []
+
+    def run_async(self, fn, on_done, on_error=None, timeout=None, on_wait=None):
+        """Run *fn* in a worker thread and deliver the result on the UI thread.
+
+        The timer is deliberately re-armed after every poll.  Some older
+        Enigma2 images only support single-shot timers, and relying on the
+        repeating flag could leave a screen on "Loading ..." forever.
+        """
+        box = {"done": False, "result": None, "error": None}
+        started = time.time()
+
+        def worker():
+            try:
+                box["result"] = fn()
+            except Exception as error:  # noqa: BLE001 - forwarded to the UI
+                box["error"] = error
+            box["done"] = True
+
+        thread = threading.Thread(target=worker)
+        thread.daemon = True
+        thread.start()
+
+        timer = eTimer()
+
+        def arm():
+            # One argument works on every eTimer version; the poll function
+            # re-arms the timer when the worker is not finished yet.
+            timer.start(120)
+
+        def finish():
+            try:
+                timer.stop()
+            except Exception:
+                pass
+            try:
+                self._timers.remove(timer)
+            except Exception:
+                pass
+
+        def fail(error):
+            if not self._alive:
+                return
+            if on_error:
+                on_error(error)
+            else:
+                self.show_error(error)
+
+        def poll():
+            if not box["done"]:
+                if timeout and time.time() - started >= timeout:
+                    finish()
+                    fail(NetError(_("Loading took too long. Check the connection and try again.")))
+                    return
+                if on_wait is not None:
+                    try:
+                        on_wait()
+                    except Exception:
+                        pass
+                arm()
+                return
+            finish()
+            if not self._alive:
+                return
+            if box["error"] is not None:
+                fail(box["error"])
+            else:
+                try:
+                    on_done(box["result"])
+                except Exception as error:  # noqa: BLE001
+                    self.show_error(error)
+
+        timer.callback.append(poll)
+        self._timers.append(timer)
+        arm()
+
+    def show_error(self, error):
+        message = _(to_text(error) or _("Error"))
+        if isinstance(error, NetError):
+            message = u"{0}\n\n{1}".format(_("Network error"), message)
+        self.session.open(MessageBox, message, MessageBox.TYPE_ERROR, timeout=10)
+
+    def show_info(self, message, timeout=5):
+        self.session.open(MessageBox, to_text(message), MessageBox.TYPE_INFO, timeout=timeout)
+
+    def status_text(self, text):
+        widget = self.get("status")
+        if widget is not None:
+            widget.setText(to_text(text))
+
+
+class ListScreen(AsyncScreen):
+    """One list, a title, a status and a footer hint."""
+
+    skin = """
+    <screen name="IPTVProList" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder">
+        <widget name="bg" position="0,0" size="1280,720" scale="1" />
+        <widget name="logo" position="40,16" size="160,59" alphatest="blend" scale="1" />
+        <widget name="title" position="40,86" size="800,40" font="Regular;30" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" />
+        <widget name="subtitle" position="40,126" size="900,26" font="Regular;18" halign="left" valign="center" foregroundColor="#bdbdbd" transparent="1" />
+        <widget name="status" position="860,90" size="380,26" font="Regular;18" halign="right" valign="center" foregroundColor="#d8a8a8" transparent="1" />
+        <widget name="list" position="40,168" size="1200,430" scrollbarMode="showOnDemand" />
+        <widget name="hint" position="40,632" size="1200,32" font="Regular;18" halign="center" valign="center" foregroundColor="#9a9a9a" transparent="1" />
+    </screen>
+    """
+
+    item_height = 72
+
+    def __init__(self, session, title=u"", subtitle=u"", hint=u""):
+        AsyncScreen.__init__(self, session)
+        self.skinName = "IPTVProList"
+        self["bg"] = Pixmap()
+        self["logo"] = Pixmap()
+        self["title"] = Label()
+        self["subtitle"] = Label()
+        self["status"] = Label()
+        self["hint"] = Label()
+        self["list"] = MultiList(self.item_height)
+        self.rows = []
+        self["title"].setText(to_text(title))
+        self["subtitle"].setText(to_text(subtitle))
+        self["hint"].setText(to_text(hint))
+        self["status"].setText(u"")
+        self["actions"] = HelpableActionMap(self, [
+            "NavigationActions", "OkCancelActions", "ColorActions", "MenuActions",
+        ], {
+            "up": self.key_up,
+            "down": self.key_down,
+            "pageUp": self.key_page_up,
+            "pageDown": self.key_page_down,
+            "top": self.key_top,
+            "bottom": self.key_bottom,
+            "ok": self.key_ok,
+            "cancel": self.key_back,
+            "red": self.key_red,
+            "green": self.key_green,
+            "yellow": self.key_yellow,
+            "blue": self.key_blue,
+            "menu": self.key_menu,
+        }, prio=0, description=_("IPTV Player Pro"))
+        self.onLayoutFinish.append(self._layout_ready)
+        self.onShown.append(self._shown)
+
+    # -------------------------------------------------------------- layout
+    def _layout_ready(self):
+        set_background(self)
+        set_logo(self)
+        try:
+            self["list"].enableAutoNavigation(False)
+        except Exception:
+            pass
+        self.layout_ready()
+
+    def _shown(self):
+        self.shown_ready()
+
+    def layout_ready(self):
+        pass
+
+    def shown_ready(self):
+        pass
+
+    # ------------------------------------------------------------- helpers
+    def set_title(self, title):
+        self["title"].setText(to_text(title))
+
+    def set_subtitle(self, subtitle):
+        self["subtitle"].setText(to_text(subtitle))
+
+    def set_hint(self, hint):
+        self["hint"].setText(to_text(hint))
+
+    def set_rows(self, rows, entries, keep_position=False):
+        index = 0
+        if keep_position:
+            try:
+                index = self["list"].getSelectedIndex()
+            except Exception:
+                index = 0
+        self.rows = rows
+        self["list"].setList(entries)
+        if not entries:
+            return
+        try:
+            if keep_position:
+                self["list"].setCurrentIndex(min(index, len(entries) - 1))
+            else:
+                self["list"].setCurrentIndex(0)
+        except Exception:
+            pass
+
+    def set_entries(self, entries, rows=None, keep_position=False):
+        if rows is None:
+            rows = entries
+        self.set_rows(rows, entries, keep_position)
+
+    def current(self):
+        try:
+            index = self["list"].getSelectedIndex()
+        except Exception:
+            return None
+        if 0 <= index < len(self.rows):
+            return self.rows[index]
+        return None
+
+    # ------------------------------------------------------------- actions
+    def key_up(self):
+        self["list"].goLineUp()
+
+    def key_down(self):
+        self["list"].goLineDown()
+
+    def key_page_up(self):
+        self["list"].goPageUp()
+
+    def key_page_down(self):
+        self["list"].goPageDown()
+
+    def key_top(self):
+        self["list"].goTop()
+
+    def key_bottom(self):
+        self["list"].goBottom()
+
+    def key_ok(self):
+        row = self.current()
+        if row is not None:
+            self.activate(row)
+
+    def key_back(self):
+        self.close()
+
+    def key_red(self):
+        self.close()
+
+    def key_green(self):
+        pass
+
+    def key_yellow(self):
+        pass
+
+    def key_blue(self):
+        pass
+
+    def key_menu(self):
+        pass
+
+    def activate(self, row):
+        pass
+
+
+class PosterLoader(object):
+    """Loads one local image into a Pixmap widget (scaled)."""
+
+    def __init__(self, screen, widget_name="poster"):
+        self.screen = screen
+        self.widget_name = widget_name
+        self.picload = ePicLoad()
+        self.picload.PictureData.get().append(self._picture_data)
+        self.size = (280, 400)
+
+    def load(self, path, size=None):
+        if size:
+            self.size = size
+        if not path or not os.path.exists(path):
+            return
+        try:
+            self.picload.setPara([self.size[0], self.size[1], 1, 1, 0, 1, "#00000000"])
+            self.picload.startDecode(path)
+        except Exception:
+            pass
+
+    def _picture_data(self, picInfo=None):
+        try:
+            if not self.screen._alive:
+                return
+            ptr = self.picload.getData()
+        except Exception:
+            return
+        if ptr is None:
+            return
+        widget = self.screen.get(self.widget_name)
+        if widget is not None:
+            widget.instance.setPixmap(ptr)
+
+    def stop(self):
+        try:
+            self.picload.PictureData.get().remove(self._picture_data)
+        except Exception:
+            pass
+
+
+def download_poster(url, store, timeout=15):
+    """Download artwork to the cache and return the local file."""
+
+    def _download():
+        target = store.logo_file(url, "poster")
+        if os.path.exists(target) and os.path.getsize(target) > 256:
+            return target
+        http = Http(timeout=timeout)
+        data, _handle = http.request(url)
+        if not data or len(data) < 128:
+            return ""
+        handle = open(target, "wb")
+        try:
+            handle.write(data)
+        finally:
+            handle.close()
+        return target
+
+    return _download()
+
+
+def play_url(session, url, service_type=4097, name=u"", item_ua=None, item_opts=None):
+    url = stream_url_with_headers(url, item_ua, item_opts)
+    if not url:
+        raise NetError(_("This stream is not playable"))
+    # Preferred path: pass the URL directly to eServiceReference(type, flags,
+    # path).  The string parser treats a raw "http://" as a path delimiter and
+    # truncates it unless the colons are percent-encoded.  The three-argument
+    # constructor keeps the complete URL, including spaces in HTTP headers.
+    try:
+        service = eServiceReference(int(service_type), 0, url)
+    except TypeError:
+        # Very old images only expose the string constructor.  Encode the
+        # colons so the path is not mistaken for a service reference field.
+        safe_url = quote(url, safe="%/?&=+,;@!$'()*[]~-._")
+        reference = u"{0}:0:1:0:0:0:0:0:0:0:{1}".format(int(service_type), safe_url)
+        service = eServiceReference(reference)
+    if name:
+        try:
+            service.setName(to_text(name))
+        except Exception:
+            pass
+    try:
+        result = session.nav.playService(service)
+    except Exception as error:
+        raise NetError(to_text(error))
+    # Navigation.playService() returns 1 when the service could not be
+    # started (or when the request was refused).  Older images return None;
+    # only an explicit 1 is treated as a failure, except when the same service
+    # is already playing (that is a harmless "ignored" result).
+    current = None
+    has_current = False
+    try:
+        getter = getattr(session.nav, "getCurrentlyPlayingServiceOrGroup", None)
+        if getter is not None:
+            current = getter()
+            has_current = True
+    except Exception:
+        current = None
+        has_current = False
+    if result == 1:
+        if current is None or to_text(current.toString()) != to_text(service.toString()):
+            raise NetError(_("Could not open the stream"))
+    elif has_current and current is None:
+        # A successful Navigation.playService() call leaves the new service
+        # as the current one.  Some images return 0 even after a native tune
+        # failure and clear the reference instead; do not close the plugin in
+        # that case.
+        raise NetError(_("Could not open the stream"))
+    return result
+
+
+def yes_no(session, text, callback):
+    session.openWithCallback(callback, MessageBox, to_text(text), MessageBox.TYPE_YESNO, timeout=-1)
+
+
+def info_box(session, text, timeout=6):
+    session.open(MessageBox, to_text(text), MessageBox.TYPE_INFO, timeout=timeout)

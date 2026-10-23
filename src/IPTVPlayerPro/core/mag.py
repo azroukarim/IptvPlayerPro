@@ -333,6 +333,10 @@ class MagClient(object):
             "name": to_text(item.get("title") or item.get("name") or item.get("alias") or "?"),
             "alias": to_text(item.get("alias") or ""),
             "censored": safe_int(item.get("censored") or 0),
+            # Some portals include a category count; keep it so Movies and
+            # Series can show numbers before their item pages are loaded.
+            "count": safe_int(item.get("count") or item.get("total_items") or
+                              item.get("items") or 0),
         }
 
     # ----------------------------------------------------------- listings

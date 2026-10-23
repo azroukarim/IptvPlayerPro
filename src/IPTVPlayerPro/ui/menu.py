@@ -267,9 +267,16 @@ class MainMenu(AsyncScreen):
             return False
         try:
             if key == "live":
-                return bool(backend.is_ready())
+                check = getattr(backend, "is_live_ready", None)
+                return bool(check() if check else backend.is_ready())
             if key == "movies":
+                check = getattr(backend, "is_vod_categories_ready", None)
+                if check:
+                    return bool(check())
                 return bool(backend.is_vod_ready())
+            check = getattr(backend, "is_series_categories_ready", None)
+            if check:
+                return bool(check())
             return bool(backend.is_series_ready())
         except Exception:
             return False
@@ -313,38 +320,9 @@ class MainMenu(AsyncScreen):
             self._loading_target = 100
             self._loading_finished = True
             return
-        source_id = self._loading_source_id
-        if source_id and prefetch.enabled(self.store):
-            started = prefetch.start(self.store, source_id, force=False)
-            if started or prefetch.running(source_id):
-                self._loading_text = prefetch.status_text(source_id) or _("Preparing ...")
-                self.run_async(
-                    lambda: prefetch.wait(source_id, timeout=1800),
-                    self._loading_prefetch_done,
-                    self._loading_failed,
-                    timeout=1810,
-                    on_wait=self._loading_prefetch_wait,
-                )
-                return
-        self._loading_refresh()
-
-    def _loading_prefetch_wait(self):
-        status = prefetch.status(self._loading_source_id)
-        if status.get("text"):
-            self._loading_text = status.get("text")
-        percent = min(95, status.get("percent") or 0)
-        if percent > self._loading_target:
-            self._loading_target = percent
-
-    def _loading_prefetch_done(self, result):
-        if isinstance(result, dict) and result.get("state") == "error":
-            self._loading_failed(result.get("error") or _("Preparation failed"))
-            return
-        if self._backend_ready(self._loading_key):
-            self._loading_text = _("Ready")
-            self._loading_target = 100
-            self._loading_finished = True
-            return
+        # Do not wait for the full MAG catalogue here.  Preparing every VOD
+        # and series page can take minutes on a large portal.  Each section is
+        # prepared directly below, and Movies/Series load their items lazily.
         self._loading_refresh()
 
     def _loading_refresh(self):
@@ -371,8 +349,15 @@ class MainMenu(AsyncScreen):
         except Exception:
             pass
         limit = max(45, network_timeout * 3 + 10)
+
+        def prepare():
+            prepare_section = getattr(self.backend, "prepare_section", None)
+            if prepare_section:
+                return prepare_section(self._loading_key, progress=report)
+            return self.backend.refresh(progress=report)
+
         self.run_async(
-            lambda: self.backend.refresh(progress=report),
+            prepare,
             self._loading_refresh_done,
             self._loading_failed,
             timeout=limit,
@@ -385,7 +370,7 @@ class MainMenu(AsyncScreen):
         pass
 
     def _loading_refresh_done(self, _result):
-        if _result is False and not self._backend_ready(self._loading_key):
+        if not self._backend_ready(self._loading_key):
             self._loading_failed(_("Preparation failed"))
             return
         self._loading_text = _("Ready")

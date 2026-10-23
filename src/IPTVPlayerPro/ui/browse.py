@@ -14,8 +14,7 @@ from Components.Pixmap import Pixmap
 from Components.VideoWindow import VideoWindow
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 
-from ..core import prefetch
-from ..core.backends import active_backend, source_label
+from ..core.backends import source_label
 from ..core.epg import clock_text
 from ..core.i18n import _
 from ..core.util import human_count, safe_int, to_text
@@ -42,6 +41,10 @@ LIVE_VIDEO_RECT = (744, 104, 512, 300)
 class BackendScreen(ListScreen):
     """Base for screens that need a loaded backend catalogue."""
 
+    # Subclasses set this to "live", "movies" or "series".  It lets a screen
+    # prepare only its own section instead of downloading the whole portal.
+    section = u""
+
     def __init__(self, session, store, backend, title, subtitle=u"", hint=u""):
         ListScreen.__init__(self, session, title, subtitle, hint)
         self.store = store
@@ -50,7 +53,6 @@ class BackendScreen(ListScreen):
         self.query = u""
         self.page = 1
         self.total = 0
-        self._prefetch_reload = False
 
     def shown_ready(self):
         if not self.started:
@@ -67,69 +69,60 @@ class BackendScreen(ListScreen):
             self.backend.ensure_fresh()
         except Exception:
             pass
-        if self.backend.is_ready():
+        if self.ready():
             self.build()
             return
-        # The background preparation must never delay the browser: the live
-        # channels are already in the cache and are loaded right away.
         self._load_backend()
+
+    def ready(self):
+        backend = self.backend
+        section = self.section
+        try:
+            if section == "live":
+                check = getattr(backend, "is_live_ready", None)
+                return bool(check() if check else backend.is_ready())
+            if section == "movies":
+                check = getattr(backend, "is_vod_categories_ready", None)
+                if check:
+                    return bool(check())
+                return bool(backend.is_vod_ready())
+            if section == "series":
+                check = getattr(backend, "is_series_categories_ready", None)
+                if check:
+                    return bool(check())
+                return bool(backend.is_series_ready())
+            return bool(backend.is_ready())
+        except Exception:
+            return False
+
+    def prepare_backend(self, progress, force=False):
+        prepare_section = getattr(self.backend, "prepare_section", None)
+        if self.section and prepare_section:
+            return prepare_section(self.section, progress=progress, force=force)
+        return self.backend.refresh(force=force, progress=progress)
 
     def _load_backend(self):
         progress = {"text": _("Loading ...")}
 
-        def report(text):
+        def report(text, percent=None):
             progress["text"] = to_text(text)
 
         network_timeout = safe_int(self.store.settings.get("timeout"), 20)
         limit = max(45, network_timeout * 3 + 10)
         self.status_text(progress["text"])
         self.run_async(
-            lambda: self.backend.refresh(progress=report),
+            lambda: self.prepare_backend(report),
             self._loaded,
             self._load_failed,
             timeout=limit,
             on_wait=lambda: self.status_text(progress["text"]),
         )
 
-    def _wait_for_prefetch(self, source_id, reload=False):
-        """Wait for the background preparation before opening a VOD list."""
-        self._prefetch_reload = reload
-        self.status_text(prefetch.status_text(source_id) or _("Preparing ..."))
-        self.run_async(
-            lambda: prefetch.wait(source_id, timeout=60),
-            self._prefetch_wait_done,
-            self._prefetch_wait_failed,
-            timeout=70,
-            on_wait=lambda: self.status_text(
-                prefetch.status_text(source_id) or _("Preparing ...")),
-        )
-
-    def waits_for_prefetch(self):
-        """Only the movies and series lists wait for the preparation."""
-        return False
-
-    def _prepare_reloaded_backend(self):
-        self.backend = active_backend(self.store)
-        try:
-            self.backend.ensure_fresh()
-        except Exception:
-            pass
-        self._epg_retry_at = 0
-
-    def _prefetch_wait_done(self, _result):
-        if self._prefetch_reload:
-            self._prepare_reloaded_backend()
-        self._load_backend()
-
-    def _prefetch_wait_failed(self, _error):
-        # A timeout in the wait helper is not fatal: the normal refresh below
-        # can still use whatever the worker has written so far.
-        if self._prefetch_reload:
-            self._prepare_reloaded_backend()
-        self._load_backend()
-
     def _loaded(self, _result):
         self.status_text(u"")
+        if not self.ready():
+            self.show_error(_("Preparation failed"))
+            return
         self.build()
 
     def _load_failed(self, error):
@@ -186,23 +179,16 @@ class BackendScreen(ListScreen):
 
     # -------------------------------------------------------------- refresh
     def reload_backend(self):
-        source = self.store.active_source() or {}
-        source_id = to_text(source.get("id"))
-        if source_id and prefetch.enabled(self.store):
-            started = prefetch.start(self.store, source_id, force=True)
-            if started or prefetch.running(source_id):
-                self._wait_for_prefetch(source_id, reload=True)
-                return
         progress = {"text": _("Refreshing ...")}
 
-        def report(text):
+        def report(text, percent=None):
             progress["text"] = to_text(text)
 
         network_timeout = safe_int(self.store.settings.get("timeout"), 20)
         limit = max(45, network_timeout * 3 + 10)
         self.status_text(progress["text"])
         self.run_async(
-            lambda: self.backend.refresh(force=True, progress=report),
+            lambda: self.prepare_backend(report, force=True),
             self._reloaded,
             self._load_failed,
             timeout=limit,
@@ -211,11 +197,16 @@ class BackendScreen(ListScreen):
 
     def _reloaded(self, _result):
         self.status_text(u"")
+        if not self.ready():
+            self.show_error(_("Preparation failed"))
+            return
         self._epg_retry_at = 0
         self.build()
 
 
 class LiveCategoriesScreen(BackendScreen):
+    section = "live"
+
     def __init__(self, session, store, backend):
         BackendScreen.__init__(self, session, store, backend, _("Live TV"),
                                source_label(store.active_source()), _("OK open  •  RED back"))
@@ -248,6 +239,8 @@ class LiveCategoriesScreen(BackendScreen):
 
 
 class LiveScreen(BackendScreen):
+    section = "live"
+
     def __init__(self, session, store, backend, category):
         BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Live TV"),
                                u"", _("OK play  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
@@ -330,6 +323,7 @@ class LiveBrowserScreen(BackendScreen):
     """
 
     skin = LIVE_SKIN
+    section = "live"
 
     def __init__(self, session, store, backend):
         AsyncScreen.__init__(self, session)
@@ -1502,6 +1496,8 @@ class LiveBrowserScreen(BackendScreen):
 
 
 class VodCategoriesScreen(BackendScreen):
+    section = "movies"
+
     def __init__(self, session, store, backend):
         BackendScreen.__init__(self, session, store, backend, _("Movies"),
                                source_label(store.active_source()), _("OK open  •  RED back"))
@@ -1530,6 +1526,8 @@ class VodCategoriesScreen(BackendScreen):
 
 
 class VodScreen(BackendScreen):
+    section = "movies"
+
     def __init__(self, session, store, backend, category):
         BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Movies"),
                                u"", _("OK play  •  GREEN search  •  BLUE reload  •  RED back"))
@@ -1611,8 +1609,31 @@ class VodScreen(BackendScreen):
         self.query = u""
         self.reload_backend()
 
+    def reload_backend(self):
+        # Refresh the categories and the current item page, not the complete
+        # portal catalogue.
+        try:
+            self.backend._vod_cache = {}
+            self.backend.vod_ready = False
+        except Exception:
+            pass
+        BackendScreen.reload_backend(self)
+
+    def _reloaded(self, result):
+        # prepare_section() deliberately keeps the old item catalogue.  This
+        # screen wants its visible page refreshed, so make the list lazy again
+        # after the category refresh has finished.
+        try:
+            self.backend._vod_cache = {}
+            self.backend.vod_ready = False
+        except Exception:
+            pass
+        BackendScreen._reloaded(self, result)
+
 
 class SeriesCategoriesScreen(BackendScreen):
+    section = "series"
+
     def __init__(self, session, store, backend):
         BackendScreen.__init__(self, session, store, backend, _("Series"),
                                source_label(store.active_source()), _("OK open  •  RED back"))
@@ -1641,6 +1662,8 @@ class SeriesCategoriesScreen(BackendScreen):
 
 
 class SeriesScreen(BackendScreen):
+    section = "series"
+
     def __init__(self, session, store, backend, category):
         BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Series"),
                                u"", _("OK open  •  GREEN search  •  BLUE reload  •  RED back"))
@@ -1710,8 +1733,28 @@ class SeriesScreen(BackendScreen):
         self.query = u""
         self.reload_backend()
 
+    def reload_backend(self):
+        # Refresh the categories and the current item page, not the complete
+        # portal catalogue.
+        try:
+            self.backend._series_cache = {}
+            self.backend.series_ready = False
+        except Exception:
+            pass
+        BackendScreen.reload_backend(self)
+
+    def _reloaded(self, result):
+        try:
+            self.backend._series_cache = {}
+            self.backend.series_ready = False
+        except Exception:
+            pass
+        BackendScreen._reloaded(self, result)
+
 
 class SeasonsScreen(BackendScreen):
+    section = "series"
+
     def __init__(self, session, store, backend, series):
         BackendScreen.__init__(self, session, store, backend, series.get("name") or _("Series"),
                                u"", _("OK open  •  RED back"))
@@ -1741,6 +1784,8 @@ class SeasonsScreen(BackendScreen):
 
 
 class EpisodesScreen(BackendScreen):
+    section = "series"
+
     def __init__(self, session, store, backend, series, season):
         BackendScreen.__init__(self, session, store, backend, series.get("name") or _("Series"),
                                u"", _("OK play  •  RED back"))
