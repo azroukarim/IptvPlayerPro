@@ -93,6 +93,8 @@ _AR = {
         u"OK شاشة مصغرة  •  أخضر بحث  •  أصفر مفضلة  •  أزرق تحديث  •  أحمر رجوع",
     "OK mini TV  •  OK again full screen  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back":
         u"OK شاشة مصغرة  •  OK مرة أخرى شاشة كاملة  •  أخضر بحث  •  أصفر مفضلة  •  أزرق تحديث  •  أحمر رجوع",
+    "OK: mini TV / full screen\nGREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back":
+        u"OK: شاشة مصغرة / شاشة كاملة\nأخضر بحث  •  أصفر مفضلة  •  أزرق تحديث  •  أحمر رجوع",
     "OK info  •  LEFT/RIGHT volume  •  YELLOW mute  •  UP/BACK back":
         u"OK معلومات  •  يسار/يمين الصوت  •  أصفر كتم  •  أعلى/BACK رجوع",
     "OK play  •  GREEN search  •  BLUE reload  •  RED back":

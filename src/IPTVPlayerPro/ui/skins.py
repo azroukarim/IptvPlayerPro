@@ -50,10 +50,9 @@ LIVE_SKIN = """
     <widget name="header" position="0,0" size="1280,80" alphatest="blend" scale="1" />
     <widget name="logo" position="20,12" size="120,44" alphatest="blend" scale="1" />
     <widget name="navLive" position="158,18" size="132,42" font="Regular;20" halign="center" valign="center" foregroundColor="#ff6b6b" transparent="1" />
-    <widget name="navMovies" position="298,18" size="102,42" font="Regular;18" halign="center" valign="center" foregroundColor="#c9a7a7" transparent="1" />
-    <widget name="navSeries" position="408,18" size="102,42" font="Regular;18" halign="center" valign="center" foregroundColor="#c9a7a7" transparent="1" />
-    <widget name="searchPill" position="528,18" size="424,44" alphatest="blend" scale="1" />
-    <widget name="searchText" position="550,18" size="380,44" font="Regular;16" halign="left" valign="center" foregroundColor="#c9a7a7" transparent="1" />
+    <widget name="searchPill" position="750,18" size="200,44" alphatest="blend" scale="1" />
+    <widget name="searchIcon" position="762,28" size="24,24" alphatest="blend" scale="1" />
+    <widget name="searchText" position="794,18" size="144,44" font="Regular;15" halign="left" valign="center" foregroundColor="#c9a7a7" transparent="1" />
     <widget name="status" position="966,14" size="294,28" font="Regular;16" halign="right" valign="center" foregroundColor="#f0dada" transparent="1" />
     <widget name="source" position="966,42" size="294,22" font="Regular;13" halign="right" valign="center" foregroundColor="#b98a8a" transparent="1" />
 
@@ -80,7 +79,7 @@ LIVE_SKIN = """
     <widget name="playLabel" position="744,610" size="230,48" font="Regular;18" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" />
     <widget name="favBg" position="992,610" size="264,48" alphatest="blend" scale="1" />
     <widget name="favLabel" position="992,610" size="264,48" font="Regular;17" halign="center" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="hint" position="20,676" size="1240,28" font="Regular;16" halign="center" valign="center" foregroundColor="#8f8f8f" transparent="1" />
+    <widget name="hint" position="744,660" size="512,54" font="Regular;14" halign="center" valign="center" foregroundColor="#8f8f8f" transparent="1" />
 </screen>
 """
 

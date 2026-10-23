@@ -701,6 +701,18 @@ def main():
         assert "News Next" in live["previewEpgNext"].text
         # The stream URL is not part of the mini-TV information area.
         assert live.get("previewUrl") is None
+        # The compact header shows the active query only; it no longer carries
+        # the long "GREEN Search channels" placeholder.
+        assert live["searchText"].text == ""
+        live.query = "news"
+        live.update_search_text()
+        assert live["searchText"].text == "news"
+        live.query = ""
+        live.update_search_text()
+        assert live["searchText"].text == ""
+        # The long footer hint is split into two compact lines under the
+        # Play / Add favorite buttons.
+        assert "\n" in live["hint"].text
         assert live._epg_timer is not None and live._epg_timer.running
         assert live._epg_timer.interval == 30000
         live.key_right()
@@ -837,11 +849,16 @@ def main():
         import xml.etree.ElementTree as ET
         from IPTVPlayerPro.ui.skins import LIVE_SKIN, PLAYER_SKIN
         skin_names = set(widget.get("name") for widget in ET.fromstring(LIVE_SKIN).findall("widget"))
-        for name in ("bg", "header", "categories", "channels", "previewLogo",
+        for name in ("bg", "header", "navLive", "searchPill", "searchIcon",
+                     "searchText", "categories", "channels", "previewLogo",
                      "previewName", "previewVideo", "previewEpgNow",
                      "previewEpgNext", "playBg", "favBg", "hint"):
             assert name in skin_names, name
         assert "previewUrl" not in skin_names
+        # The Live TV header is intentionally limited to the active section;
+        # Movies and Series belong to their own screens.
+        assert "navMovies" not in skin_names
+        assert "navSeries" not in skin_names
 
         player_skin = ET.fromstring(PLAYER_SKIN)
         # Enigma2 stores transparency in the alpha byte (0x00 opaque,

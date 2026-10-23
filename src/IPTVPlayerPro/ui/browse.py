@@ -369,9 +369,8 @@ class LiveBrowserScreen(BackendScreen):
         self["header"] = Pixmap()
         self["logo"] = Pixmap()
         self["navLive"] = Label()
-        self["navMovies"] = Label()
-        self["navSeries"] = Label()
         self["searchPill"] = Pixmap()
+        self["searchIcon"] = Pixmap()
         self["searchText"] = Label()
         self["status"] = Label()
         self["source"] = Label()
@@ -470,14 +469,12 @@ class LiveBrowserScreen(BackendScreen):
         self["rightPanel"].instance.setPixmap(pixmap("live_panel_right.png"))
         self["preview"].instance.setPixmap(pixmap("live_preview.png"))
         self["searchPill"].instance.setPixmap(pixmap("live_search.png"))
+        self["searchIcon"].instance.setPixmap(pixmap("live_search_icon.png"))
         self["playBg"].instance.setPixmap(pixmap("live_button.png"))
         self["favBg"].instance.setPixmap(pixmap("live_button_dark.png"))
 
         self["navLive"].setText(_("Live TV"))
-        self["navMovies"].setText(_("Movies"))
-        self["navSeries"].setText(_("Series"))
-        self["searchText"].setText(u"GREEN  " + _("Search channels"))
-        self["hint"].setText(_("OK mini TV  •  OK again full screen  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
+        self["hint"].setText(_("OK: mini TV / full screen\nGREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
         self["playLabel"].setText(u"OK  " + _("Play"))
         self["previewKind"].setText(_("CHANNEL PREVIEW"))
         self["previewName"].setText(_("Live TV"))
@@ -1183,10 +1180,10 @@ class LiveBrowserScreen(BackendScreen):
         self["source"].setText(label)
 
     def update_search_text(self):
-        if self.query:
-            self["searchText"].setText(_("Search") + u": " + self.query)
-        else:
-            self["searchText"].setText(u"GREEN  " + _("Search channels"))
+        # The magnifier icon is the permanent search affordance; the label is
+        # only used to show the active query.  An empty query therefore leaves
+        # the compact search pill clean instead of showing a key hint.
+        self["searchText"].setText(self.query or u"")
 
     # ------------------------------------------------------------------ epg
     def _epg_programmes(self, item):

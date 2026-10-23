@@ -105,12 +105,31 @@ def make_panels():
     ImageDraw.Draw(preview).rounded_rectangle(
         [1, 1, 510, 298], radius=14, outline=(110, 22, 28, 255), width=2)
     save(preview, "live_preview.png")
-    save(rounded_panel((430, 42), (30, 10, 13, 255), (150, 32, 40, 255), 21, 2),
+    save(rounded_panel((200, 44), (30, 10, 13, 255), (150, 32, 40, 255), 22, 2),
          "live_search.png")
     save(rounded_panel((230, 48), (120, 16, 16, 255), (245, 245, 245, 255), 9, 2),
          "live_button.png")
     save(rounded_panel((266, 48), (74, 9, 9, 255), (140, 30, 36, 255), 9, 2),
          "live_button_dark.png")
+
+
+def make_search_icon():
+    """A small anti-aliased magnifier for the compact Live TV search pill."""
+    scale = 4
+    size = 24
+    image = Image.new("RGBA", (size * scale, size * scale), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    colour = (240, 218, 218, 255)
+    draw.ellipse([4 * scale, 4 * scale, 17 * scale, 17 * scale],
+                 outline=colour, width=2 * scale)
+    draw.line([(16 * scale, 16 * scale), (21 * scale, 21 * scale)],
+              fill=colour, width=3 * scale)
+    cap = int(1.5 * scale)
+    for x, y in ((16, 16), (21, 21)):
+        draw.ellipse([x * scale - cap, y * scale - cap,
+                      x * scale + cap, y * scale + cap], fill=colour)
+    image = image.resize((size, size), Image.LANCZOS)
+    save(image, "live_search_icon.png")
 
 
 def make_player_assets():
@@ -144,6 +163,7 @@ def main():
     make_background()
     make_header()
     make_panels()
+    make_search_icon()
     make_player_assets()
     print("Live screen assets generated.")
 
