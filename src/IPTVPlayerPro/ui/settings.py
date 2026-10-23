@@ -6,7 +6,7 @@ from __future__ import absolute_import
 from ..core.i18n import _, language_label, set_language
 from ..core.store import VERSION
 from ..core.util import safe_int, to_text
-from .base import ListScreen, LiveList, info_box, row_entry, yes_no
+from .base import ListScreen, LiveList, font, info_box, row_entry, yes_no
 
 
 SERVICE_TYPES = [
@@ -41,11 +41,27 @@ def storage_label(value):
     return text
 
 
+class SettingsList(LiveList):
+    """58 px rows with text sized like the screen hint.
+
+    The hint is drawn by the skin at 18 px (scaled by the receiver), while
+    list fonts are absolute pixels.  On a 1080p receiver the hint therefore
+    looks larger than a 24 px list font.  These sizes match the hint while
+    keeping the same row height as the CHANNELS list.
+    """
+
+    def __init__(self, item_height=58):
+        LiveList.__init__(self, item_height)
+        self.l.setFont(1, font(20))
+        self.l.setFont(2, font(28, True))
+        self.l.setFont(3, font(28, True))
+
+
 class SettingsScreen(ListScreen):
-    # Use the same 58 px rows, 24 px bold titles and 16 px values as the
-    # CHANNELS list so the settings screen matches the rest of the plugin.
+    # Keep the compact 58 px rows used by the CHANNELS list, but use a
+    # larger, hint-sized font so the settings text is readable on 1080p.
     item_height = 58
-    list_class = LiveList
+    list_class = SettingsList
 
     def __init__(self, session, store):
         ListScreen.__init__(self, session, _("Player settings"), u"",
@@ -130,7 +146,8 @@ class SettingsScreen(ListScreen):
                 value = u""
             else:
                 value = option["display"](self.draft.get(option["key"]))
-            entries.append(row_entry(1200, self.item_height, option["label"], value=value))
+            entries.append(row_entry(1200, self.item_height, option["label"],
+                                     value=value, value_size=20))
         self.set_entries(entries, rows, keep_position=True)
         self.set_title(_("Player settings"))
         self.set_subtitle(_("IPTV Player Pro") + u"  \u2022  " + _("Version") + u" " + VERSION)

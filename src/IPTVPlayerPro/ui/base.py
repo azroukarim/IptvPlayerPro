@@ -191,7 +191,8 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
 
 
 def row_entry(width, height, title, subtitle=None, icon=None, icon_size=(44, 44),
-              value=None, badge=None, selected_bg=ROW_SEL, bg=ROW_BG):
+              value=None, badge=None, selected_bg=ROW_SEL, bg=ROW_BG,
+              value_size=16):
     title = to_text(title)
     subtitle = to_text(subtitle) if subtitle else u""
     value = to_text(value) if value else u""
@@ -211,7 +212,8 @@ def row_entry(width, height, title, subtitle=None, icon=None, icon_size=(44, 44)
         text_x = 12 + icon_w + 14
     value_width = 0
     if value:
-        value_width = min(300, max(90, len(to_text(value)) * 11 + 20))
+        char_width = max(11, int(value_size * 0.65))
+        value_width = min(360, max(90, len(to_text(value)) * char_width + 24))
         entries.append(MultiContentEntryText(
             pos=(width - value_width - 16, 0), size=(value_width, height),
             font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,

@@ -225,7 +225,7 @@ python build_tar.py
 
 ```
 dist/IPTVPlayerPro.tar.gz
-dist/IPTVPlayerPro_1.4.2.tar.gz
+dist/IPTVPlayerPro_1.4.3.tar.gz
 ```
 
 ### الاختبارات

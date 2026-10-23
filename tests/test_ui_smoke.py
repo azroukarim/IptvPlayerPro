@@ -185,12 +185,13 @@ def _build_components():
         def __init__(self):
             self.items = []
             self.index = 0
+            self.fonts = {}
 
         def setItemHeight(self, height):
             pass
 
         def setFont(self, index, font):
-            pass
+            self.fonts[index] = font
 
         def setList(self, items):
             self.items = items
@@ -533,7 +534,7 @@ def main():
                                              SeriesScreen, VodCategoriesScreen, VodScreen)
         from IPTVPlayerPro.ui.info import InfoScreen
         from IPTVPlayerPro.ui.player import LivePlayerScreen
-        from IPTVPlayerPro.ui.settings import SettingsScreen
+        from IPTVPlayerPro.ui.settings import SettingsList, SettingsScreen
         from IPTVPlayerPro.ui.sources import SourcesScreen
         from IPTVPlayerPro import plugin as plugin_module
 
@@ -557,14 +558,20 @@ def main():
         assert settings["list"].l.items
         settings.layout_ready()
 
-        # Settings must use the same 58 px rows and 24 px bold font as the
-        # CHANNELS list, change values with LEFT/RIGHT, and persist them only
+        # Settings keeps the 58 px rows used by the CHANNELS list, but its
+        # fonts match the larger skin-scaled hint: 28 px bold labels and
+        # 20 px values.  Values change with LEFT/RIGHT and persist only
         # through the Save entry at the end of the list.
         from IPTVPlayerPro.ui.base import LiveList, font as make_font
         assert make_font(24, True).name == "Bold"
         assert make_font(24, False).name == "Regular"
-        assert SettingsScreen.list_class is LiveList
+        assert issubclass(SettingsList, LiveList)
+        assert SettingsScreen.list_class is SettingsList
         assert settings.item_height == 58
+        assert settings["list"].l.fonts[2].size == 28
+        assert settings["list"].l.fonts[2].name == "Bold"
+        assert settings["list"].l.fonts[1].size == 20
+        assert settings["list"].l.fonts[1].name == "Regular"
         assert settings.options[-1]["key"] == "save_settings"
         default_language = settings.draft["language"]
         settings.key_right()
