@@ -76,7 +76,7 @@ def font(size, bold=False, font_name=None):
     ptr = _FONTS.get(key)
     if ptr is None:
         try:
-            font_basename = font_name or "Regular"
+            font_basename = font_name or ("Bold" if bold else "Regular")
             ptr = gFont(font_basename, size)
         except Exception:
             ptr = gFont("Regular", size)

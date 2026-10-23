@@ -560,7 +560,9 @@ def main():
         # Settings must use the same 58 px rows and 24 px bold font as the
         # CHANNELS list, change values with LEFT/RIGHT, and persist them only
         # through the Save entry at the end of the list.
-        from IPTVPlayerPro.ui.base import LiveList
+        from IPTVPlayerPro.ui.base import LiveList, font as make_font
+        assert make_font(24, True).name == "Bold"
+        assert make_font(24, False).name == "Regular"
         assert SettingsScreen.list_class is LiveList
         assert settings.item_height == 58
         assert settings.options[-1]["key"] == "save_settings"
