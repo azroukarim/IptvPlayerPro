@@ -852,8 +852,11 @@ class MagBackend(BaseBackend):
                     except Exception:
                         raw_ch = []
                     if not raw_ch and self.genres_itv:
-                        for g in self.genres_itv:
+                        # Report progress for genre iteration fallback
+                        total_genres = len(self.genres_itv)
+                        for idx, g in enumerate(self.genres_itv):
                             gid = to_text(g.get("id"))
+                            _bump(_("Loading genre {0}/{1}...").format(idx + 1, total_genres))
                             for p in range(1, 10):
                                 b, tot = c.ordered_list("itv", gid, p)
                                 if not b:

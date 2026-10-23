@@ -348,7 +348,9 @@ class MainMenu(AsyncScreen):
             network_timeout = int(self.store.settings.get("timeout") or 20)
         except Exception:
             pass
-        limit = max(45, network_timeout * 3 + 10)
+        # Section-specific loading should be fast (live channels only).
+        # Use a shorter timeout to fail fast on bad portals.
+        limit = max(20, network_timeout * 2 + 5)
 
         def prepare():
             prepare_section = getattr(self.backend, "prepare_section", None)
@@ -392,9 +394,10 @@ class MainMenu(AsyncScreen):
             return
         if not self._loading_finished:
             elapsed = max(0.0, time.time() - self._loading_started)
-            # Never finish the bar before the catalogue is actually ready.
-            floor = min(90, int(elapsed * 1.8))
-            target = max(self._loading_target, floor)
+            # Progress based on actual backend progress, not fake animation.
+            # The backend's progress callback updates _loading_target.
+            # We animate smoothly towards that target.
+            target = self._loading_target
         else:
             target = 100
         if self._loading_display < target:
