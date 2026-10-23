@@ -1,5 +1,74 @@
-__pycache__/
-*.py[cod]
-.venv/
-build/
-*.tmp
+# ===== .NET Build Results =====
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# ===== Visual Studio =====
+.vs/
+*.vspscc
+*.vssscc
+*.pidb
+*.svclog
+*.scc
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+.vscode/
+
+# ===== NuGet =====
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.nuget.props
+*.nuget.targets
+
+# ===== Build outputs =====
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Oo]ut/
+
+# ===== Publish =====
+publish/
+PublishScripts/
+*.publishsettings
+
+# ===== Database / User data =====
+*.db
+*.sqlite
+*.sqlite3
+*.mdf
+*.ldf
+
+# ===== Secrets / Env =====
+.env
+.env.local
+*.secrets
+appsettings.Development.json
+appsettings.Local.json
+
+# ===== IDE / OS =====
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Playlists / Media (إذا كانت كبيرة) =====
+*.m3u
+*.m3u8
+!sample.m3u
