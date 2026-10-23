@@ -385,6 +385,7 @@ class ListScreen(AsyncScreen):
     """
 
     item_height = 72
+    list_class = MultiList
 
     def __init__(self, session, title=u"", subtitle=u"", hint=u""):
         AsyncScreen.__init__(self, session)
@@ -395,7 +396,7 @@ class ListScreen(AsyncScreen):
         self["subtitle"] = Label()
         self["status"] = Label()
         self["hint"] = Label()
-        self["list"] = MultiList(self.item_height)
+        self["list"] = self.list_class(self.item_height)
         self.rows = []
         self["title"].setText(to_text(title))
         self["subtitle"].setText(to_text(subtitle))
@@ -406,6 +407,8 @@ class ListScreen(AsyncScreen):
         ], {
             "up": self.key_up,
             "down": self.key_down,
+            "left": self.key_left,
+            "right": self.key_right,
             "pageUp": self.key_page_up,
             "pageDown": self.key_page_down,
             "top": self.key_top,
@@ -489,6 +492,12 @@ class ListScreen(AsyncScreen):
 
     def key_down(self):
         self["list"].goLineDown()
+
+    def key_left(self):
+        pass
+
+    def key_right(self):
+        pass
 
     def key_page_up(self):
         self["list"].goPageUp()

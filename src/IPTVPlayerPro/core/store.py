@@ -18,7 +18,7 @@ from .util import (atomic_write, ensure_dir, md5, now, read_json, safe_int,
 _STORE_LOCK = threading.RLock()
 
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 CONFIG_CANDIDATES = [
     "/etc/enigma2/iptvplayerpro",
@@ -334,6 +334,14 @@ class Store(object):
         with _STORE_LOCK:
             self.load()
             self.settings[key] = value
+            self.save()
+
+    def set_settings(self, values):
+        """Save several settings in one load/save cycle."""
+        with _STORE_LOCK:
+            self.load()
+            for key, value in values.items():
+                self.settings[key] = value
             self.save()
 
     # ------------------------------------------------------------- sources

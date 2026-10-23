@@ -43,29 +43,28 @@ curl -k -L -o /tmp/iptvpro.sh \
 sh /tmp/iptvpro.sh
 ```
 
-السكريبت يقوم تلقائيًا بتنزيل ملف `ipk` من GitHub، وتثبيته عبر `opkg`، ثم إعادة تشغيل واجهة Enigma2.
+السكريبت يقوم تلقائيًا بتنزيل ملف `IPTVPlayerPro.tar.gz` من GitHub، وفكّه في مجلد البلوجين، ثم إعادة تشغيل واجهة Enigma2.
 
 خيارات إضافية:
 
 ```sh
 sh /tmp/iptvpro.sh --no-restart      # تثبيت بدون إعادة تشغيل
-sh /tmp/iptvpro.sh --ipk /tmp/enigma2-plugin-extensions-iptvplayerpro_1.3.0_all.ipk
+sh /tmp/iptvpro.sh --tar /tmp/IPTVPlayerPro.tar.gz
 ```
 
-إذا نسخت `install.sh` وملف `ipk` إلى نفس المجلد على الرسيفر، فسيستخدم السكريبت الملف المحلي دون تنزيل.
+إذا نسخت `install.sh` وملف `IPTVPlayerPro.tar.gz` إلى نفس المجلد على الرسيفر، فسيستخدم السكريبت الملف المحلي دون تنزيل.
 
-### عبر ملف ipk
+### التثبيت اليدوي من ملف tar.gz
 
-1. حمّل الملف من مجلد `dist`:
-   `enigma2-plugin-extensions-iptvplayerpro_1.3.0_all.ipk`
-2. انسخه إلى الجهاز، مثلًا إلى `/tmp` عبر FTP/SFTP.
-3. من Telnet/SSH نفّذ:
+1. من Telnet/SSH على الرسيفر نفّذ:
 
 ```sh
-opkg install /tmp/enigma2-plugin-extensions-iptvplayerpro_1.3.0_all.ipk
+wget -q --no-check-certificate -O /tmp/IPTVPlayerPro.tar.gz \
+  https://raw.githubusercontent.com/azroukarim/IptvPlayerPro/main/dist/IPTVPlayerPro.tar.gz
+tar -xzf /tmp/IPTVPlayerPro.tar.gz -C /
 ```
 
-4. أعد تشغيل الواجهة:
+2. أعد تشغيل الواجهة:
 
 ```sh
 init 4
@@ -76,9 +75,6 @@ init 3
 أو من الريموت: **Menu → Standby & Restart → Restart GUI**.
 
 بعد التثبيت يظهر البلوجين في: **Menu → Plugins** وفي قائمة الإضافات.
-
-> إذا رفض `opkg` التثبيت بسبب الاعتماديات، استخدم:
-> `opkg install --force-depends /tmp/enigma2-plugin-extensions-iptvplayerpro_1.3.0_all.ipk`
 
 ## الإعداد الأول
 
@@ -221,14 +217,15 @@ python -m pip install pillow
 python tools/make_assets.py
 python tools/make_live_assets.py
 
-# بناء ملف ipk
-python build_ipk.py
+# بناء حزمة tar.gz الجاهزة للرسيفر
+python build_tar.py
 ```
 
-سيتم إنشاء الملف في:
+سيتم إنشاء الملفين في:
 
 ```
-dist/enigma2-plugin-extensions-iptvplayerpro_1.3.0_all.ipk
+dist/IPTVPlayerPro.tar.gz
+dist/IPTVPlayerPro_1.4.1.tar.gz
 ```
 
 ### الاختبارات
@@ -254,7 +251,7 @@ src/IPTVPlayerPro/
 tools/                     توليد الصور ومعاينة الواجهة
 tests/                     اختبارات سطح المكتب
 docs/                      لقطات وصور توضيحية
-build_ipk.py               بناء حزمة ipk
+build_tar.py               بناء حزمة tar.gz
 dist/                      الحزم الجاهزة
 ```
 

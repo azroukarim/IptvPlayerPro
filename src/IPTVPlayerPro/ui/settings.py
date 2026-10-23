@@ -6,7 +6,7 @@ from __future__ import absolute_import
 from ..core.i18n import _, language_label, set_language
 from ..core.store import VERSION
 from ..core.util import safe_int, to_text
-from .base import ListScreen, info_box, row_entry, yes_no
+from .base import ListScreen, LiveList, info_box, row_entry, yes_no
 
 
 SERVICE_TYPES = [
@@ -42,19 +42,24 @@ def storage_label(value):
 
 
 class SettingsScreen(ListScreen):
-    item_height = 72
+    # Use the same 58 px rows, 24 px bold titles and 16 px values as the
+    # CHANNELS list so the settings screen matches the rest of the plugin.
+    item_height = 58
+    list_class = LiveList
 
     def __init__(self, session, store):
-        ListScreen.__init__(self, session, _("Player settings"), u"", _("OK change  •  RED close"))
+        ListScreen.__init__(self, session, _("Player settings"), u"",
+                            _("LEFT/RIGHT change  •  OK action  •  GREEN save  •  RED close"))
         self.store = store
+        # Changes are staged here until the user selects "Save settings".
+        self.draft = dict(self.store.settings)
         self.options = []
         self.build_options()
         self.render()
 
     # --------------------------------------------------------------- build
     def build_options(self):
-        settings = self.store.settings
-        language = set_language(settings.get("language") or "ar")
+        language = set_language(self.draft.get("language") or "ar")
         options = [
             {
                 "key": "language", "label": _("Language"),
@@ -111,12 +116,12 @@ class SettingsScreen(ListScreen):
             {"key": "web_info", "label": _("Web interface address"), "action": True},
             {"key": "clear_cache", "label": _("Clear cache"), "action": True},
             {"key": "about", "label": _("About"), "action": True},
+            {"key": "save_settings", "label": _("Save settings"), "action": True},
         ]
         self.options = options
         self.language = language
 
     def render(self):
-        settings = self.store.settings
         rows = []
         entries = []
         for option in self.options:
@@ -124,16 +129,19 @@ class SettingsScreen(ListScreen):
             if option.get("action"):
                 value = u""
             else:
-                value = option["display"](settings.get(option["key"]))
-            entries.append(row_entry(1200, 66, option["label"], value=value))
-        self.set_entries(entries, rows)
+                value = option["display"](self.draft.get(option["key"]))
+            entries.append(row_entry(1200, self.item_height, option["label"], value=value))
+        self.set_entries(entries, rows, keep_position=True)
         self.set_title(_("Player settings"))
         self.set_subtitle(_("IPTV Player Pro") + u"  \u2022  " + _("Version") + u" " + VERSION)
-        self.set_hint(_("OK change  •  RED close"))
+        self.set_hint(_("LEFT/RIGHT change  •  OK action  •  GREEN save  •  RED close"))
 
     # ------------------------------------------------------------- actions
     def activate(self, row):
         key = row.get("key")
+        if key == "save_settings":
+            self.save_changes()
+            return
         if key == "clear_cache":
             yes_no(self.session, _("Clear the cached playlists, EPG and logos?"), self._clear_confirmed)
             return
@@ -152,26 +160,103 @@ class SettingsScreen(ListScreen):
         if key == "sync_files":
             self.sync_files()
             return
+        if row.get("values"):
+            self.step(1)
+
+    def step(self, direction):
+        """Change the focused value with the LEFT/RIGHT keys."""
+        row = self.current()
+        if not row:
+            return
         values = row.get("values") or []
         if not values:
             return
-        current = self.store.settings.get(key)
+        key = row.get("key")
         try:
-            index = values.index(current)
+            index = values.index(self.draft.get(key))
         except ValueError:
             index = -1
-        value = values[(index + 1) % len(values)]
-        self.store.set_setting(key, value)
+        if direction > 0:
+            index = (index + 1) % len(values)
+        elif index < 0:
+            index = len(values) - 1
+        else:
+            index = (index - 1) % len(values)
+        self.draft[key] = values[index]
         if key == "language":
-            set_language(value)
+            set_language(values[index])
             self.build_options()
-        elif key in ("web_enabled", "web_port"):
-            started = self.apply_web()
-            if key == "web_enabled" and value and started:
-                self.show_web_info()
-        elif key in ("m3u_file", "mac_file"):
-            self.sync_files()
         self.render()
+
+    def key_left(self):
+        self.step(-1)
+
+    def key_right(self):
+        self.step(1)
+
+    def key_green(self):
+        self.save_changes()
+
+    def _dirty(self):
+        for option in self.options:
+            key = option.get("key")
+            if option.get("action") or not option.get("values"):
+                continue
+            if self.draft.get(key) != self.store.settings.get(key):
+                return True
+        return False
+
+    def save_changes(self, close_after=False):
+        pending = {}
+        for option in self.options:
+            key = option.get("key")
+            if option.get("action") or not option.get("values"):
+                continue
+            value = self.draft.get(key)
+            if value != self.store.settings.get(key):
+                pending[key] = value
+        showed = False
+        if pending:
+            try:
+                self.store.set_settings(pending)
+            except Exception as error:
+                self.show_error(error)
+                return
+            self.draft = dict(self.store.settings)
+            if "language" in pending:
+                set_language(self.store.settings.get("language") or "ar")
+                self.build_options()
+            if "web_enabled" in pending or "web_port" in pending:
+                self.apply_web()
+            if "m3u_file" in pending or "mac_file" in pending:
+                if close_after:
+                    try:
+                        self.store.sync_server_files()
+                    except Exception:
+                        pass
+                else:
+                    self.sync_files()
+                    showed = True
+            self.render()
+        if close_after:
+            self.close()
+            return
+        if not showed:
+            info_box(self.session, _("Settings saved"))
+
+    def request_close(self):
+        if self._dirty():
+            yes_no(self.session, _("You have unsaved changes. Save them now?"),
+                   self._close_answer)
+        else:
+            self.close()
+
+    def _close_answer(self, answer):
+        if answer:
+            self.save_changes(close_after=True)
+            return
+        set_language(self.store.settings.get("language") or "ar")
+        self.close()
 
     def apply_web(self):
         try:
@@ -239,7 +324,7 @@ class SettingsScreen(ListScreen):
         info_box(self.session, _("Cache cleared"))
 
     def key_red(self):
-        self.close()
+        self.request_close()
 
     def key_back(self):
-        self.close()
+        self.request_close()

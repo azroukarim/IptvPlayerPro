@@ -898,7 +898,7 @@ class MagBackend(BaseBackend):
 
         num_threads = min(3, len(genre_list))
         threads = []
-        for _ in range(num_threads):
+        for _worker in range(num_threads):
             t = threading.Thread(target=_fetch_genre_worker)
             t.daemon = True
             t.start()

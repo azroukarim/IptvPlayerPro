@@ -197,6 +197,12 @@ _AR = {
     "Reloading portal ...": u"جارٍ تحديث البورتال ...",
     # settings
     "Player settings": u"إعدادات المشغل",
+    "Save settings": u"حفظ الإعدادات",
+    "Settings saved": u"تم حفظ الإعدادات",
+    "You have unsaved changes. Save them now?":
+        u"لديك تغييرات غير محفوظة. هل تريد حفظها الآن؟",
+    "LEFT/RIGHT change  •  OK action  •  GREEN save  •  RED close":
+        u"يسار/يمين تغيير  •  OK تنفيذ  •  أخضر حفظ  •  أحمر إغلاق",
     "Language": u"اللغة",
     "Stream engine": u"محرك البث",
     "HTTP timeout (seconds)": u"مهلة الاتصال (ثواني)",

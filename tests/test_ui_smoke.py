@@ -557,6 +557,26 @@ def main():
         assert settings["list"].l.items
         settings.layout_ready()
 
+        # Settings must use the same 58 px rows and 24 px bold font as the
+        # CHANNELS list, change values with LEFT/RIGHT, and persist them only
+        # through the Save entry at the end of the list.
+        from IPTVPlayerPro.ui.base import LiveList
+        assert SettingsScreen.list_class is LiveList
+        assert settings.item_height == 58
+        assert settings.options[-1]["key"] == "save_settings"
+        default_language = settings.draft["language"]
+        settings.key_right()
+        assert settings.draft["language"] != default_language
+        settings.key_left()
+        assert settings.draft["language"] == default_language
+        settings["list"].setCurrentIndex(2)
+        old_timeout = store.settings["timeout"]
+        settings.key_right()
+        assert settings.draft["timeout"] != old_timeout
+        assert store.settings["timeout"] == old_timeout  # not saved yet
+        settings.save_changes()
+        assert store.settings["timeout"] == settings.draft["timeout"]
+
         account = AccountScreen(session, store, None)
         account.layout_ready()
         assert account["details"].text
