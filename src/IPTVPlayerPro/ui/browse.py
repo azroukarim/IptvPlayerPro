@@ -19,11 +19,12 @@ from ..core.epg import clock_text
 from ..core.i18n import _
 from ..core.util import human_count, safe_int, to_text
 from .base import (AsyncScreen, ListScreen, LiveList, category_entry,
-                   channel_entry, download_logo, download_poster, font, info_box,
-                   pixmap, play_url, row_entry, skin_factor, vod_category_entry)
+                   channel_entry, download_logo, download_poster,
+                   episode_card_entry, font, info_box, pixmap, play_url,
+                   row_entry, season_entry, skin_factor, vod_category_entry)
 from .info import InfoScreen
 from .player import LivePlayerScreen
-from .skins import GRID_SKIN, LIVE_SKIN
+from .skins import GRID_SKIN, LIVE_SKIN, SERIES_DETAIL_SKIN, SERIES_EPISODES_SKIN
 
 
 # Channel logos are decoded at their original size.  Some providers ship very
@@ -1781,8 +1782,8 @@ class GridBrowserScreen(AsyncScreen):
 
             col = self.grid_cursor % 5
             row = self.grid_cursor // 5
-            x = 310 + col * 192 - 4
-            y = 126 + row * 264 - 4
+            x = 305 + col * 193 - 2
+            y = 124 + row * 246 - 2
 
             try:
                 self["gridFocus"].instance.move(ePoint(x, y))
@@ -1975,6 +1976,292 @@ class VodGridScreen(GridBrowserScreen):
         self.open_child(InfoScreen, item)
 
 
+class SeriesDetailsScreen(AsyncScreen):
+    """Series detail screen matching IBO Player Pro layout."""
+    skin = SERIES_DETAIL_SKIN
+
+    def __init__(self, session, store, backend, series):
+        AsyncScreen.__init__(self, session)
+        self.skinName = "IPTVProSeriesDetail"
+        self.store = store
+        self.backend = backend
+        self.series = series
+
+        self["bg"] = Pixmap()
+        self["backIcon"] = Label(u"←")
+        self["backLabel"] = Label(_("Back"))
+        self["poster"] = Pixmap()
+        self["btnEpisodesBg"] = Pixmap()
+        self["btnEpisodes"] = Label(u"▶  " + _("Episodes"))
+        self["btnFavBg"] = Pixmap()
+        self["btnFav"] = Label(u"★")
+        self["title"] = Label(to_text(series.get("name") or ""))
+        self["stars"] = Label()
+        self["genre"] = Label()
+        self["date"] = Label()
+        self["description"] = Label(to_text(series.get("description") or _("No description available.")))
+        self["hint"] = Label(_("OK: Episodes  •  YELLOW: Favorite  •  RED: Back"))
+
+        self.btn_focus = 0
+
+        self["actions"] = HelpableActionMap(self, [
+            "NavigationActions", "OkCancelActions", "ColorActions",
+        ], {
+            "left": self.key_left,
+            "right": self.key_right,
+            "ok": self.key_ok,
+            "cancel": self.key_red,
+            "red": self.key_red,
+            "yellow": self.key_yellow,
+            "green": self.open_episodes,
+        }, -1)
+
+        self.onLayoutFinish.append(self._layout_ready)
+
+    def _layout_ready(self):
+        self["bg"].instance.setPixmap(pixmap("live_bg.png"))
+        url = self.series.get("poster") or self.series.get("logo") or self.series.get("cover")
+        if url:
+            local = self.store.logo_file(url, kind="poster")
+            if os.path.exists(local) and os.path.getsize(local) > 128:
+                ptr = pixmap(local)
+                if ptr:
+                    self["poster"].instance.setPixmap(ptr)
+            else:
+                self["poster"].instance.setPixmap(pixmap("series_card.png"))
+                self.run_async(lambda: download_poster(url, self.store), self._poster_done, lambda e: None)
+        else:
+            self["poster"].instance.setPixmap(pixmap("series_card.png"))
+
+        rating = self.series.get("rating")
+        if rating:
+            self["stars"].setText(u"★★★★☆  {0}".format(rating))
+        else:
+            self["stars"].setText(u"★★★★☆")
+
+        genre = self.series.get("genre") or self.series.get("genres") or self.series.get("group")
+        self["genre"].setText(u"Genre : {0}".format(genre) if genre else u"")
+
+        year = self.series.get("year") or self.series.get("date")
+        self["date"].setText(u"Date : {0}".format(year) if year else u"")
+
+    def _poster_done(self, path):
+        if self._alive and path and os.path.exists(path) and os.path.getsize(path) > 128:
+            ptr = pixmap(path)
+            if ptr:
+                self["poster"].instance.setPixmap(ptr)
+
+    def key_left(self):
+        self.btn_focus = 0
+
+    def key_right(self):
+        self.btn_focus = 1
+
+    def key_ok(self):
+        if self.btn_focus == 0:
+            self.open_episodes()
+        else:
+            self.key_yellow()
+
+    def open_episodes(self):
+        self.session.openWithCallback(self.child_closed, SeriesEpisodesScreen, self.store, self.backend, self.series)
+
+    def child_closed(self, result=None):
+        if result == "zapped":
+            self.close("zapped")
+
+    def key_yellow(self):
+        try:
+            self.backend.toggle_favorite(self.series)
+        except Exception:
+            pass
+
+    def key_red(self):
+        self.close()
+
+
+class SeriesEpisodesScreen(AsyncScreen):
+    """Seasons and episodes screen matching IBO Player Pro layout."""
+    skin = SERIES_EPISODES_SKIN
+
+    def __init__(self, session, store, backend, series):
+        AsyncScreen.__init__(self, session)
+        self.skinName = "IPTVProSeriesEpisodes"
+        self.store = store
+        self.backend = backend
+        self.series = series
+
+        self["bg"] = Pixmap()
+        self["backHint"] = Label(u"← " + _("Back"))
+        self["seriesTitle"] = Label(to_text(series.get("name") or ""))
+        self["status"] = Label()
+
+        self["seasons"] = LiveList(item_height=56)
+        self["episodes"] = LiveList(item_height=110)
+
+        self.seasons_list = []
+        self.current_season_id = "1"
+        self.episodes_list = []
+        self.focus_area = "episodes"
+
+        self["actions"] = HelpableActionMap(self, [
+            "NavigationActions", "OkCancelActions", "ColorActions",
+        ], {
+            "left": self.key_left,
+            "right": self.key_right,
+            "up": self.key_up,
+            "down": self.key_down,
+            "ok": self.key_ok,
+            "cancel": self.key_red,
+            "red": self.key_red,
+        }, -1)
+
+        self.onLayoutFinish.append(self._layout_ready)
+
+    def _layout_ready(self):
+        self["bg"].instance.setPixmap(pixmap("live_bg.png"))
+        self.status_text(_("Loading seasons ..."))
+        self.run_async(lambda: self.backend.seasons(self.series.get("id")), self._seasons_loaded, self._load_failed)
+
+    def status_text(self, text):
+        self["status"].setText(to_text(text))
+
+    def _load_failed(self, error):
+        self.status_text(_("Failed to load"))
+
+    def _seasons_loaded(self, seasons):
+        self.status_text(u"")
+        self.seasons_list = seasons or []
+        entries = []
+        for s in self.seasons_list:
+            entries.append(season_entry(248, 56, s.get("name") or _("Season"), s.get("count")))
+        self["seasons"].setList(entries)
+
+        if self.seasons_list:
+            self.current_season_id = self.seasons_list[0].get("id") or "1"
+            self["seasons"].setCurrentIndex(0)
+            self.load_episodes()
+
+    def load_episodes(self):
+        self.status_text(_("Loading episodes ..."))
+        self.episodes_list = []
+        self["episodes"].setList([])
+        self.run_async(
+            lambda: self.backend.episodes(self.series.get("id"), self.current_season_id, 1),
+            self._episodes_loaded,
+            self._load_failed
+        )
+
+    def _episodes_loaded(self, result):
+        items, total = result
+        self.episodes_list = list(items)
+        self.status_text(u"")
+
+        placeholder = pixmap("episode.png")
+        entries = []
+        for item in self.episodes_list:
+            entries.append(episode_card_entry(980, 110, item, icon=placeholder))
+        self["episodes"].setList(entries)
+
+        for idx, item in enumerate(self.episodes_list[:12]):
+            url = item.get("cover") or item.get("poster") or item.get("logo")
+            if url:
+                local = self.store.logo_file(url, kind="poster")
+                if os.path.exists(local) and os.path.getsize(local) > 128:
+                    ptr = pixmap(local)
+                    if ptr:
+                        entries[idx] = episode_card_entry(980, 110, item, icon=ptr)
+                else:
+                    self._trigger_thumb(idx, item, url)
+        self["episodes"].setList(entries)
+
+    def _trigger_thumb(self, idx, item, url):
+        def _dl():
+            return download_poster(url, self.store)
+        def _done(path):
+            if path and os.path.exists(path) and self._alive:
+                ptr = pixmap(path)
+                if ptr and idx < len(self.episodes_list):
+                    pass
+        try:
+            self.run_async(_dl, _done, lambda e: None)
+        except Exception:
+            pass
+
+    def key_left(self):
+        if self.focus_area == "episodes":
+            self.focus_area = "seasons"
+
+    def key_right(self):
+        if self.focus_area == "seasons":
+            if self.episodes_list:
+                self.focus_area = "episodes"
+
+    def key_up(self):
+        if self.focus_area == "seasons":
+            idx = self["seasons"].getSelectedIndex()
+            if idx > 0:
+                self["seasons"].setCurrentIndex(idx - 1)
+                self._season_changed(idx - 1)
+        else:
+            idx = self["episodes"].getSelectedIndex()
+            if idx > 0:
+                self["episodes"].setCurrentIndex(idx - 1)
+
+    def key_down(self):
+        if self.focus_area == "seasons":
+            idx = self["seasons"].getSelectedIndex()
+            if idx + 1 < len(self.seasons_list):
+                self["seasons"].setCurrentIndex(idx + 1)
+                self._season_changed(idx + 1)
+        else:
+            idx = self["episodes"].getSelectedIndex()
+            if idx + 1 < len(self.episodes_list):
+                self["episodes"].setCurrentIndex(idx + 1)
+
+    def _season_changed(self, idx):
+        season = self.seasons_list[idx]
+        self.current_season_id = season.get("id") or "1"
+        self.load_episodes()
+
+    def key_ok(self):
+        if self.focus_area == "seasons":
+            self.focus_area = "episodes"
+        else:
+            idx = self["episodes"].getSelectedIndex()
+            if 0 <= idx < len(self.episodes_list):
+                ep = self.episodes_list[idx]
+                self.play_item(ep)
+
+    def play_item(self, item):
+        self.status_text(_("Resolving stream ..."))
+        self.run_async(lambda: self.backend.resolve(item), lambda url: self._play(url, item), self._play_failed)
+
+    def _play(self, url, item):
+        self.status_text(u"")
+        user_agent, options = self.stream_options(item)
+        try:
+            play_url(self.session, url, safe_int(self.store.settings.get("service_type"), 4097),
+                     item.get("name"), user_agent, options)
+        except Exception as error:
+            self.status_text(to_text(error))
+            return
+        if self.store.settings.get("close_after_zap", True):
+            self.close("zapped")
+
+    def stream_options(self, item):
+        try:
+            return self.backend.stream_options(item)
+        except Exception:
+            return (to_text(item.get("ua")), to_text(item.get("opts")))
+
+    def _play_failed(self, error):
+        self.status_text(_("Failed to play"))
+
+    def key_red(self):
+        self.close()
+
+
 class SeriesGridScreen(GridBrowserScreen):
     section = "series"
 
@@ -1991,7 +2278,7 @@ class SeriesGridScreen(GridBrowserScreen):
         return self.backend.series_items(category_id, query, page)
 
     def activate_item(self, item):
-        self.open_child(SeasonsScreen, item)
+        self.open_child(SeriesDetailsScreen, item)
 
 
 class VodCategoriesScreen(BackendScreen):

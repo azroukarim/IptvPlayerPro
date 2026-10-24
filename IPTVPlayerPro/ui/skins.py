@@ -157,63 +157,110 @@ GRID_SKIN = """
     <widget name="catHeader" position="14,88" size="270,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
     <widget name="categories" position="6,124" size="284,540" scrollbarMode="showNever" backgroundColor="#16070b" />
 
-    <widget name="gridHeader" position="310,88" size="550,32" font="Regular;20" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="gridPage" position="870,88" size="390,32" font="Regular;18" halign="right" valign="center" foregroundColor="#f0b34a" transparent="1" />
+    <widget name="gridHeader" position="305,88" size="550,32" font="Regular;20" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
+    <widget name="gridPage" position="865,88" size="400,32" font="Regular;18" halign="right" valign="center" foregroundColor="#f0b34a" transparent="1" />
 
-    <widget name="gridFocus" position="0,0" size="188,258" alphatest="blend" zPosition="10" />
+    <!-- gridFocus: 2px border around 160x220 card => size 164x224, offset -2,-2 -->
+    <widget name="gridFocus" position="0,0" size="164,224" alphatest="blend" zPosition="10" />
 
-    <!-- Row 0 (slots 0..4) -->
-    <eLabel position="310,126" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_0" position="310,126" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_0" position="434,316" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_0" position="314,348" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="305,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_0" position="305,124" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_0" position="418,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_0" position="305,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <eLabel position="502,126" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_1" position="502,126" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_1" position="626,316" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_1" position="506,348" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="498,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_1" position="498,124" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_1" position="611,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_1" position="498,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <eLabel position="694,126" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_2" position="694,126" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_2" position="818,316" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_2" position="698,348" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="691,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_2" position="691,124" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_2" position="804,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_2" position="691,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <eLabel position="886,126" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_3" position="886,126" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_3" position="1010,316" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_3" position="890,348" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="884,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_3" position="884,124" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_3" position="997,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_3" position="884,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <eLabel position="1078,126" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_4" position="1078,126" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_4" position="1202,316" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_4" position="1082,348" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="1077,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_4" position="1077,124" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_4" position="1190,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_4" position="1077,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <!-- Row 1 (slots 5..9) -->
-    <eLabel position="310,390" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_5" position="310,390" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_5" position="434,580" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_5" position="314,612" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="305,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_5" position="305,370" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_5" position="418,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_5" position="305,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <eLabel position="502,390" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_6" position="502,390" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_6" position="626,580" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_6" position="506,612" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="498,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_6" position="498,370" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_6" position="611,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_6" position="498,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <eLabel position="694,390" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_7" position="694,390" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_7" position="818,580" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_7" position="698,612" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="691,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_7" position="691,370" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_7" position="804,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_7" position="691,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <eLabel position="886,390" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_8" position="886,390" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_8" position="1010,580" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_8" position="890,612" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="884,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_8" position="884,370" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_8" position="997,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_8" position="884,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <eLabel position="1078,390" size="180,250" backgroundColor="#180b12" zPosition="2" />
-    <widget name="poster_9" position="1078,390" size="180,218" scale="1" zPosition="3" />
-    <widget name="rating_9" position="1202,580" size="50,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
-    <widget name="title_9" position="1082,612" size="172,24" font="Regular;15" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
+    <eLabel position="1077,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
+    <widget name="poster_9" position="1077,370" size="160,220" scale="1" zPosition="3" />
+    <widget name="rating_9" position="1190,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
+    <widget name="title_9" position="1077,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
-    <widget name="hint" position="310,668" size="950,42" font="Regular;16" halign="center" valign="center" foregroundColor="#8f8f8f" transparent="1" />
+    <widget name="hint" position="305,668" size="960,42" font="Regular;16" halign="center" valign="center" foregroundColor="#8f8f8f" transparent="1" />
+</screen>
+"""
+
+SERIES_DETAIL_SKIN = """
+<screen name="IPTVProSeriesDetail" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder" backgroundColor="#000000">
+    <eLabel position="0,0" size="1280,720" backgroundColor="#120816" zPosition="-10" />
+    <widget name="bg" position="0,0" size="1280,720" scale="1" zPosition="-5" />
+    <eLabel position="0,0" size="1280,720" backgroundColor="#dd0d0510" zPosition="-2" />
+
+    <widget name="backIcon" position="30,22" size="40,36" font="Regular;26" foregroundColor="#ffffff" transparent="1" zPosition="5" />
+    <widget name="backLabel" position="75,22" size="200,36" font="Regular;20" foregroundColor="#ffffff" transparent="1" zPosition="5" />
+
+    <eLabel position="58,168" size="234,344" backgroundColor="#322238" zPosition="1" />
+    <widget name="poster" position="60,170" size="230,340" scale="1" zPosition="2" />
+
+    <widget name="btnEpisodesBg" position="330,170" size="210,48" backgroundColor="#0288d1" zPosition="2" />
+    <widget name="btnEpisodes" position="330,170" size="210,48" font="Regular;20" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="3" />
+
+    <widget name="btnFavBg" position="555,170" size="64,48" backgroundColor="#2c1e30" zPosition="2" />
+    <widget name="btnFav" position="555,170" size="64,48" font="Regular;26" halign="center" valign="center" foregroundColor="#f0b34a" transparent="1" zPosition="3" />
+
+    <widget name="title" position="330,240" size="890,50" font="Regular;30" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="3" />
+
+    <widget name="stars" position="330,300" size="400,30" font="Regular;20" halign="left" valign="center" foregroundColor="#f0b34a" transparent="1" zPosition="3" />
+    <widget name="genre" position="330,335" size="890,26" font="Regular;16" halign="left" valign="center" foregroundColor="#d0c0d8" transparent="1" zPosition="3" />
+    <widget name="date" position="330,365" size="890,26" font="Regular;16" halign="left" valign="center" foregroundColor="#d0c0d8" transparent="1" zPosition="3" />
+
+    <widget name="description" position="330,410" size="890,220" font="Regular;19" halign="left" valign="top" foregroundColor="#e0e0e0" transparent="1" zPosition="3" />
+
+    <widget name="hint" position="60,665" size="1160,35" font="Regular;16" halign="center" valign="center" foregroundColor="#888888" transparent="1" zPosition="3" />
+</screen>
+"""
+
+SERIES_EPISODES_SKIN = """
+<screen name="IPTVProSeriesEpisodes" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder" backgroundColor="#000000">
+    <eLabel position="0,0" size="1280,720" backgroundColor="#0e0508" zPosition="-10" />
+    <widget name="bg" position="0,0" size="1280,720" scale="1" />
+
+    <eLabel position="0,0" size="1280,70" backgroundColor="#1a0b14" zPosition="1" />
+    <widget name="backHint" position="24,18" size="200,34" font="Regular;20" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="3" />
+    <widget name="seriesTitle" position="300,16" size="950,38" font="Regular;26" halign="right" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="3" />
+
+    <eLabel position="270,70" size="2,650" backgroundColor="#2a1824" zPosition="2" />
+
+    <widget name="seasons" position="12,85" size="248,610" scrollbarMode="showNever" backgroundColor="#12060b" />
+    <widget name="episodes" position="285,85" size="980,610" scrollbarMode="showOnDemand" backgroundColor="#0e0508" />
+
+    <widget name="status" position="300,340" size="680,40" font="Regular;22" halign="center" valign="center" foregroundColor="#f0b34a" transparent="1" zPosition="10" />
 </screen>
 """
