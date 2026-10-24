@@ -792,7 +792,7 @@ class LiveBrowserScreen(BackendScreen):
         entries = []
         for category in self.categories:
             entries.append(category_entry(
-                292, 48, category.get("name") or u"",
+                322, 48, category.get("name") or u"",
                 value=human_count(category.get("count")),
             ))
         self["categories"].setList(entries)
@@ -960,13 +960,13 @@ class LiveBrowserScreen(BackendScreen):
             if self._icon_start <= index < self._icon_end:
                 icon = self._channel_icon(item)
             entries.append(channel_entry(
-                412, 48, item.get("number") or (self._row_offset + index + 1),
+                402, 48, item.get("number") or (self._row_offset + index + 1),
                 item.get("name") or u"", icon=icon,
                 favorite=favorite,
             ))
         if len(self.browser_items) < self.total:
             entries.append(channel_entry(
-                412, 48, 0, _("Load more ..."),
+                402, 48, 0, _("Load more ..."),
                 icon=pixmap("more.png"),
             ))
         self["channels"].setList(entries)

@@ -62,31 +62,31 @@ LIVE_SKIN = """
     <widget name="status" position="966,14" size="294,28" font="Regular;16" halign="right" valign="center" foregroundColor="#f0dada" transparent="1" />
     <widget name="source" position="966,42" size="294,22" font="Regular;13" halign="right" valign="center" foregroundColor="#b98a8a" transparent="1" />
 
-    <widget name="leftPanel" position="0,80" size="300,640" alphatest="blend" scale="1" />
-    <widget name="midPanel" position="300,80" size="420,640" alphatest="blend" scale="1" />
-    <widget name="rightPanel" position="720,80" size="560,640" alphatest="blend" scale="1" />
+    <widget name="leftPanel" position="0,80" size="330,640" alphatest="blend" scale="1" />
+    <widget name="midPanel" position="330,80" size="410,640" alphatest="blend" scale="1" />
+    <widget name="rightPanel" position="740,80" size="540,640" alphatest="blend" scale="1" />
 
-    <widget name="catHeader" position="18,92" size="264,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="categories" position="4,126" size="292,576" scrollbarMode="showNever" />
-    <widget name="chHeader" position="318,92" size="384,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="channels" position="304,126" size="412,576" scrollbarMode="showNever" />
+    <widget name="catHeader" position="14,92" size="290,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
+    <widget name="categories" position="4,126" size="322,576" scrollbarMode="showNever" />
+    <widget name="chHeader" position="344,92" size="380,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
+    <widget name="channels" position="334,126" size="402,576" scrollbarMode="showNever" />
 
-    <widget name="preview" position="744,104" size="512,300" alphatest="blend" scale="1" />
-    <widget name="previewVideo" position="744,104" size="512,300" backgroundColor="transparent" />
-    <widget name="previewKind" position="762,112" size="250,24" font="Regular;14" halign="left" valign="center" foregroundColor="#b98a8a" transparent="1" />
-    <widget name="previewLogo" position="884,142" size="216,216" alphatest="blend" scale="1" />
-    <widget name="previewChannelLogo" position="744,414" size="64,48" alphatest="blend" scale="1" />
-    <widget name="previewName" position="818,414" size="438,48" font="Regular;24" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" />
-    <widget name="previewMeta" position="818,462" size="438,28" font="Regular;17" halign="left" valign="center" foregroundColor="#d8b8b8" transparent="1" />
-    <widget name="previewEpgNow" position="744,490" size="512,30" font="Regular;18" halign="left" valign="center" foregroundColor="#f0b34a" transparent="1" />
-    <widget name="previewEpgNext" position="744,520" size="512,24" font="Regular;15" halign="left" valign="center" foregroundColor="#c9a7a7" transparent="1" />
-    <widget name="previewFav" position="744,548" size="512,28" font="Regular;17" halign="left" valign="center" foregroundColor="#f0b34a" transparent="1" />
+    <widget name="preview" position="754,104" size="512,300" alphatest="blend" scale="1" />
+    <widget name="previewVideo" position="754,104" size="512,300" backgroundColor="transparent" />
+    <widget name="previewKind" position="772,112" size="250,24" font="Regular;14" halign="left" valign="center" foregroundColor="#b98a8a" transparent="1" />
+    <widget name="previewLogo" position="894,142" size="216,216" alphatest="blend" scale="1" />
+    <widget name="previewChannelLogo" position="754,414" size="64,48" alphatest="blend" scale="1" />
+    <widget name="previewName" position="828,414" size="438,48" font="Regular;24" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" />
+    <widget name="previewMeta" position="828,462" size="438,28" font="Regular;17" halign="left" valign="center" foregroundColor="#d8b8b8" transparent="1" />
+    <widget name="previewEpgNow" position="754,490" size="512,30" font="Regular;18" halign="left" valign="center" foregroundColor="#f0b34a" transparent="1" />
+    <widget name="previewEpgNext" position="754,520" size="512,24" font="Regular;15" halign="left" valign="center" foregroundColor="#c9a7a7" transparent="1" />
+    <widget name="previewFav" position="754,548" size="512,28" font="Regular;17" halign="left" valign="center" foregroundColor="#f0b34a" transparent="1" />
 
-    <widget name="playBg" position="744,610" size="230,48" alphatest="blend" scale="1" />
-    <widget name="playLabel" position="744,610" size="230,48" font="Regular;18" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" />
-    <widget name="favBg" position="992,610" size="264,48" alphatest="blend" scale="1" />
-    <widget name="favLabel" position="992,610" size="264,48" font="Regular;17" halign="center" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="hint" position="744,660" size="512,54" font="Regular;14" halign="center" valign="center" foregroundColor="#8f8f8f" transparent="1" />
+    <widget name="playBg" position="754,610" size="230,48" alphatest="blend" scale="1" />
+    <widget name="playLabel" position="754,610" size="230,48" font="Regular;18" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" />
+    <widget name="favBg" position="1002,610" size="264,48" alphatest="blend" scale="1" />
+    <widget name="favLabel" position="1002,610" size="264,48" font="Regular;17" halign="center" valign="center" foregroundColor="#f0dada" transparent="1" />
+    <widget name="hint" position="754,660" size="512,54" font="Regular;14" halign="center" valign="center" foregroundColor="#8f8f8f" transparent="1" />
 </screen>
 """
 

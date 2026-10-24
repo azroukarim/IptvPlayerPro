@@ -247,14 +247,14 @@ def category_entry(width, height, title, value=None):
         )
     ]
     value_width = 46 if value else 0
-    text_width = width - value_width - 16 if value else width - 16
+    text_width = width - value_width - 12 if value else width - 12
     entries.append(MultiContentEntryText(
-        pos=(10, 0), size=(text_width, height),
+        pos=(8, 0), size=(text_width, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
         text=title, color=LIVE_TEXT, color_sel=WHITE,
     ))
     if value:
-        val_x = width - value_width - 6
+        val_x = width - value_width - 4
         entries.append(MultiContentEntryText(
             pos=(val_x, 0), size=(value_width, height),
             font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
