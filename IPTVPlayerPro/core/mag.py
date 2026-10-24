@@ -150,10 +150,15 @@ class MagClient(object):
 
     def _headers(self):
         root = self.portal or ""
+        parsed = urlsplit(root)
+        path_prefix = parsed.path.replace("/server/load.php", "/")
+        if not path_prefix.endswith("/"):
+            path_prefix += "/"
+        referer = "{0}://{1}{2}index.html".format(parsed.scheme or "http", parsed.netloc, path_prefix)
         return {
             "User-Agent": MAG_UA,
             "X-User-Agent": MAG_XUA,
-            "Referer": root + "/c/",
+            "Referer": referer,
             "Cookie": self._cookie(),
             "Accept": "*/*",
             "Connection": "Keep-Alive",
@@ -333,6 +338,10 @@ class MagClient(object):
             "name": to_text(item.get("title") or item.get("name") or item.get("alias") or "?"),
             "alias": to_text(item.get("alias") or ""),
             "censored": safe_int(item.get("censored") or 0),
+            # Some portals include a category count; keep it so Movies and
+            # Series can show numbers before their item pages are loaded.
+            "count": safe_int(item.get("count") or item.get("total_items") or
+                              item.get("items") or 0),
         }
 
     # ----------------------------------------------------------- listings

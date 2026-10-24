@@ -47,14 +47,33 @@ class NetError(Exception):
         return to_bytes(value) if py2() else value
 
 
+_SSL_CTX = None
+
 def _ssl_context():
+    global _SSL_CTX
+    if _SSL_CTX is not None:
+        return _SSL_CTX
     if not ssl:
         return None
     try:
-        context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        return context
+        _SSL_CTX = ssl._create_unverified_context()
+        return _SSL_CTX
+    except Exception:
+        pass
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT if hasattr(ssl, "PROTOCOL_TLS_CLIENT") else ssl.PROTOCOL_SSLv23)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        _SSL_CTX = ctx
+        return _SSL_CTX
+    except Exception:
+        pass
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        _SSL_CTX = ctx
+        return _SSL_CTX
     except Exception:
         return None
 

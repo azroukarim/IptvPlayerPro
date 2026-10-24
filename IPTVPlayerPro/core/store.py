@@ -18,14 +18,47 @@ from .util import (atomic_write, ensure_dir, md5, now, read_json, safe_int,
 _STORE_LOCK = threading.RLock()
 
 
-VERSION = "1.4.0"
+VERSION = "1.5.7"
 
-CONFIG_CANDIDATES = [
+# All persistent plugin data (config.json, m3u.txt and mac.txt) lives in one
+# folder.  Flash is preferred because it is always mounted; HDD and USB are
+# used when /etc/enigma2 is read-only.  The lowercase names are kept in the
+# list so an existing installation is migrated instead of starting empty.
+DATA_DIR_CANDIDATES = [
+    "/etc/enigma2/IPTVPlayerPro",
+    "/media/hdd/IPTVPlayerPro",
+    "/media/usb/IPTVPlayerPro",
     "/etc/enigma2/iptvplayerpro",
+    "/media/hdd/iptvplayerpro",
+    "/media/usb/iptvplayerpro",
     "/etc/iptvplayerpro",
     "/home/root/.config/iptvplayerpro",
 ]
+# Kept for code that imported the old name.
+CONFIG_CANDIDATES = DATA_DIR_CANDIDATES
+LEGACY_CONFIG_DIRS = [
+    "/etc/enigma2/iptvplayerpro",
+    "/etc/iptvplayerpro",
+    "/home/root/.config/iptvplayerpro",
+    "/etc/enigma2/IPTVPlayerPro",
+    "/media/hdd/iptvplayerpro",
+    "/media/hdd/IPTVPlayerPro",
+    "/media/usb/iptvplayerpro",
+    "/media/usb/IPTVPlayerPro",
+]
+SERVER_FILE_NAMES = ("m3u.txt", "mac.txt")
+SERVER_FILE_SOURCES = [
+    "/etc/enigma2/IPTVPlayerPro",
+    "/etc/enigma2/iptvplayerpro",
+    "/media/hdd/IPTVPlayerPro",
+    "/media/hdd/iptvplayerpro",
+    "/media/usb/IPTVPlayerPro",
+    "/media/usb/iptvplayerpro",
+]
 CACHE_CANDIDATES = [
+    "/media/hdd/IPTVPlayerPro/cache",
+    "/media/usb/IPTVPlayerPro/cache",
+    "/etc/enigma2/IPTVPlayerPro/cache",
     "/tmp/iptvplayerpro",
     "/var/volatile/tmp/iptvplayerpro",
     "/dev/shm/iptvplayerpro",
@@ -37,6 +70,7 @@ DEFAULT_MAC_FILE = SERVER_FILE_DIR + "/mac.txt"
 
 DEFAULT_SETTINGS = {
     "language": "ar",
+    "font": "default",
     "service_type": 4097,
     "timeout": 20,
     "page_size": 300,
@@ -48,6 +82,8 @@ DEFAULT_SETTINGS = {
     "web_enabled": True,
     "web_port": 8099,
     "web_pin": "",
+    "cache_server_data": True,
+    "data_dir": SERVER_FILE_DIR,
     "m3u_file": DEFAULT_M3U_FILE,
     "mac_file": DEFAULT_MAC_FILE,
 }
@@ -82,6 +118,120 @@ def _storage_ready(path):
         if parent == mount or parent.startswith(mount + "/"):
             return os.path.isdir(mount)
     return True
+
+
+def _valid_config(path):
+    data = read_json(path, None)
+    return isinstance(data, dict)
+
+
+def _data_files_complete(folder):
+    """True when a folder already contains the complete plugin data set."""
+    if not _valid_config(os.path.join(folder, "config.json")):
+        return False
+    for name in SERVER_FILE_NAMES:
+        path = os.path.join(folder, name)
+        try:
+            if not os.path.isfile(path) or os.path.getsize(path) <= 0:
+                return False
+        except Exception:
+            return False
+    return True
+
+
+def _writable_dir(folder):
+    if not _storage_ready(folder):
+        return False
+    if not ensure_dir(folder):
+        return False
+    probe = os.path.join(folder, ".write-test")
+    try:
+        handle = open(probe, "wb")
+        try:
+            handle.write(b"1")
+        finally:
+            handle.close()
+        os.remove(probe)
+        return True
+    except Exception:
+        return False
+
+
+def _resolve_data_dir():
+    """Pick one persistent folder for config.json, m3u.txt and mac.txt.
+
+    The most recently written config.json wins, so a user who already moved
+    the data to HDD/USB keeps using that folder, while an old backup copy is
+    never allowed to replace newer sources.  When no config exists, flash is
+    preferred, then HDD and USB when flash is not writable.
+    """
+    seen = set()
+    configs = []
+    for folder in DATA_DIR_CANDIDATES + LEGACY_CONFIG_DIRS:
+        if folder in seen:
+            continue
+        seen.add(folder)
+        path = os.path.join(folder, "config.json")
+        if not _valid_config(path):
+            continue
+        try:
+            configs.append((os.path.getmtime(path), _data_files_complete(folder),
+                            folder))
+        except Exception:
+            continue
+    configs.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    for _mtime, _complete, folder in configs:
+        if _writable_dir(folder):
+            return folder
+    return _first_writable(DATA_DIR_CANDIDATES)
+
+
+def _copy_data_file(source, target):
+    if not source or not target:
+        return False
+    if os.path.abspath(source) == os.path.abspath(target):
+        return False
+    try:
+        if not os.path.isfile(source) or os.path.getsize(source) <= 0:
+            return False
+        folder = os.path.dirname(target)
+        if folder and not ensure_dir(folder):
+            return False
+        shutil.copy2(source, target)
+        return os.path.isfile(target) and os.path.getsize(target) > 0
+    except Exception:
+        return False
+
+
+def _migrate_data_files(target, config_sources=None, server_sources=None):
+    """Bring legacy config and server text files into *target*.
+
+    The operation is intentionally additive: old files are left in place as a
+    backup, while the plugin switches to the one complete folder.
+    """
+    if not target:
+        return
+    ensure_dir(target)
+    target_config = os.path.join(target, "config.json")
+    if not _valid_config(target_config):
+        for folder in (config_sources or LEGACY_CONFIG_DIRS):
+            source = os.path.join(folder, "config.json")
+            if _copy_data_file(source, target_config):
+                break
+    for name in SERVER_FILE_NAMES:
+        target_file = os.path.join(target, name)
+        try:
+            if os.path.isfile(target_file) and os.path.getsize(target_file) > 0:
+                continue
+        except Exception:
+            pass
+        for folder in (server_sources or SERVER_FILE_SOURCES):
+            source = os.path.join(folder, name)
+            if _copy_data_file(source, target_file):
+                break
+        else:
+            # Older builds also allowed /media/usb/m3u.txt and mac.txt.
+            _copy_data_file("/media/usb/" + name, target_file)
 
 
 def _read_server_file(path):
@@ -142,16 +292,8 @@ def _default_name(kind, url, mac):
 def _first_writable(candidates, suffix=""):
     for base in candidates:
         folder = base + suffix
-        if ensure_dir(folder):
-            probe = os.path.join(folder, ".write-test")
-            try:
-                handle = open(probe, "wb")
-                handle.write(b"1")
-                handle.close()
-                os.remove(probe)
-                return folder
-            except Exception:
-                continue
+        if _writable_dir(folder):
+            return folder
     return candidates[0] + suffix
 
 
@@ -166,13 +308,35 @@ def _merge(defaults, values):
 
 class Store(object):
     def __init__(self, config_dir=None, cache_dir=None):
-        self.config_dir = config_dir or _first_writable(CONFIG_CANDIDATES)
+        if config_dir is None:
+            self.config_dir = _resolve_data_dir()
+            _migrate_data_files(self.config_dir)
+        else:
+            self.config_dir = config_dir
+            ensure_dir(self.config_dir)
         self.cache_dir = cache_dir or _first_writable(CACHE_CANDIDATES)
         self.config_path = os.path.join(self.config_dir, "config.json")
         self.logo_dir = os.path.join(self.cache_dir, "logos")
         self.poster_dir = os.path.join(self.cache_dir, "posters")
         self._data = None
         self.load()
+        if self._normalize_data_paths():
+            self.save()
+        self._ensure_server_files()
+
+    def _normalize_data_paths(self):
+        """Keep config and both text files in the same folder."""
+        desired = {
+            "data_dir": self.config_dir,
+            "m3u_file": os.path.join(self.config_dir, "m3u.txt"),
+            "mac_file": os.path.join(self.config_dir, "mac.txt"),
+        }
+        changed = False
+        for key, value in desired.items():
+            if self.settings.get(key) != value:
+                self.settings[key] = value
+                changed = True
+        return changed
 
     # ------------------------------------------------------------------ io
     def load(self):
@@ -216,43 +380,65 @@ class Store(object):
             ensure_dir(self.config_dir)
             return write_json(self.config_path, self._data)
 
-    def _sync_server_files(self):
-        results = []
+    def _server_lines(self, kind):
+        lines = []
+        if kind == "m3u":
+            lines.append(u"# IPTV Player Pro - M3U servers")
+            lines.append(u"# name|url|user-agent")
+        else:
+            lines.append(u"# IPTV Player Pro - MAG/Stalker servers")
+            lines.append(u"# name|portal|mac|user-agent")
+        for source in self.sources:
+            if to_text(source.get("type")) != kind:
+                continue
+            name = _clean_field(source.get("name")) or _clean_field(source.get("id"))
+            url = _clean_url(source.get("url"))
+            ua = _clean_field(source.get("ua"))
+            if kind == "m3u":
+                lines.append(u"{0}|{1}|{2}".format(name, url, ua))
+            else:
+                lines.append(u"{0}|{1}|{2}|{3}".format(
+                    name, url, _normalize_mac(source.get("mac")), ua))
+        return u"\n".join(lines) + u"\n"
+
+    def _write_server_file(self, kind, path):
+        if not path:
+            raise IOError(u"no file path")
+        if not _storage_ready(path):
+            raise IOError(u"media path is not mounted")
+        folder = os.path.dirname(path)
+        if folder and not ensure_dir(folder):
+            raise IOError(u"cannot create folder: " + folder)
+        if not atomic_write(path, self._server_lines(kind)):
+            raise IOError(u"cannot write file")
+
+    def _ensure_server_files(self):
+        """Create missing text files next to config.json without overwriting."""
         specs = (
-            ("m3u", to_text(self.settings.get("m3u_file")).strip() or DEFAULT_M3U_FILE),
-            ("mag", to_text(self.settings.get("mac_file")).strip() or DEFAULT_MAC_FILE),
+            ("m3u", to_text(self.settings.get("m3u_file")).strip()),
+            ("mag", to_text(self.settings.get("mac_file")).strip()),
         )
         for kind, path in specs:
             if not path:
                 continue
-            if not _storage_ready(path):
-                results.append({"path": path, "ok": False, "error": u"media path is not mounted"})
-                continue
             try:
-                folder = os.path.dirname(path)
-                if folder and not ensure_dir(folder):
-                    raise IOError(u"cannot create folder: " + folder)
-                lines = []
-                if kind == "m3u":
-                    lines.append(u"# IPTV Player Pro - M3U servers")
-                    lines.append(u"# name|url|user-agent")
-                else:
-                    lines.append(u"# IPTV Player Pro - MAG/Stalker servers")
-                    lines.append(u"# name|portal|mac|user-agent")
-                for source in self.sources:
-                    if to_text(source.get("type")) != kind:
-                        continue
-                    name = _clean_field(source.get("name")) or _clean_field(source.get("id"))
-                    url = _clean_url(source.get("url"))
-                    ua = _clean_field(source.get("ua"))
-                    if kind == "m3u":
-                        lines.append(u"{0}|{1}|{2}".format(name, url, ua))
-                    else:
-                        lines.append(u"{0}|{1}|{2}|{3}".format(
-                            name, url, _normalize_mac(source.get("mac")), ua))
-                data = u"\n".join(lines) + u"\n"
-                if not atomic_write(path, data):
-                    raise IOError(u"cannot write file")
+                if os.path.isfile(path) and os.path.getsize(path) > 0:
+                    continue
+                self._write_server_file(kind, path)
+            except Exception:
+                pass
+
+    def _sync_server_files(self):
+        results = []
+        specs = (
+            ("m3u", to_text(self.settings.get("m3u_file")).strip() or
+             os.path.join(self.config_dir, "m3u.txt")),
+            ("mag", to_text(self.settings.get("mac_file")).strip() or
+             os.path.join(self.config_dir, "mac.txt")),
+        )
+        for kind, path in specs:
+            try:
+                self._write_server_file(kind, path)
                 results.append({"path": path, "ok": True, "error": u""})
             except Exception as error:
                 results.append({"path": path, "ok": False, "error": to_text(error)})
@@ -271,8 +457,10 @@ class Store(object):
             result = {"added": 0, "updated": 0, "errors": [], "files": []}
             rows = []
             specs = (
-                ("m3u", to_text(self.settings.get("m3u_file")).strip() or DEFAULT_M3U_FILE),
-                ("mag", to_text(self.settings.get("mac_file")).strip() or DEFAULT_MAC_FILE),
+                ("m3u", to_text(self.settings.get("m3u_file")).strip() or
+                 os.path.join(self.config_dir, "m3u.txt")),
+                ("mag", to_text(self.settings.get("mac_file")).strip() or
+                 os.path.join(self.config_dir, "mac.txt")),
             )
             for kind, path in specs:
                 lines = _read_server_file(path)
@@ -330,10 +518,28 @@ class Store(object):
     def settings(self):
         return self._data["settings"]
 
+    def _setting_value(self, key, value):
+        # The three persistent files always belong to the same data folder.
+        if key == "m3u_file":
+            return os.path.join(self.config_dir, "m3u.txt")
+        if key == "mac_file":
+            return os.path.join(self.config_dir, "mac.txt")
+        if key == "data_dir":
+            return self.config_dir
+        return value
+
     def set_setting(self, key, value):
         with _STORE_LOCK:
             self.load()
-            self.settings[key] = value
+            self.settings[key] = self._setting_value(key, value)
+            self.save()
+
+    def set_settings(self, values):
+        """Save several settings in one load/save cycle."""
+        with _STORE_LOCK:
+            self.load()
+            for key, value in values.items():
+                self.settings[key] = self._setting_value(key, value)
             self.save()
 
     # ------------------------------------------------------------- sources

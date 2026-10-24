@@ -150,10 +150,15 @@ class MagClient(object):
 
     def _headers(self):
         root = self.portal or ""
+        parsed = urlsplit(root)
+        path_prefix = parsed.path.replace("/server/load.php", "/")
+        if not path_prefix.endswith("/"):
+            path_prefix += "/"
+        referer = "{0}://{1}{2}index.html".format(parsed.scheme or "http", parsed.netloc, path_prefix)
         return {
             "User-Agent": MAG_UA,
             "X-User-Agent": MAG_XUA,
-            "Referer": root + "/c/",
+            "Referer": referer,
             "Cookie": self._cookie(),
             "Accept": "*/*",
             "Connection": "Keep-Alive",

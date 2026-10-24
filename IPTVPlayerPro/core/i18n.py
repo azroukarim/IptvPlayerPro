@@ -36,6 +36,11 @@ _AR = {
     "The source is already being prepared.": u"المصدر قيد التجهيز بالفعل.",
     "Saving playlist ...": u"جارٍ حفظ القائمة ...",
     "Saving portal data ...": u"جارٍ حفظ بيانات البورتال ...",
+    "Loading Live TV ...": u"جارٍ تحميل البث المباشر ...",
+    "Loading Movies ...": u"جارٍ تحميل الأفلام ...",
+    "Loading Series ...": u"جارٍ تحميل المسلسلات ...",
+    "Ready": u"جاهز",
+    "Data folder": u"مجلد البيانات",
     "No active playlist": u"لا توجد قائمة نشطة",
     "Open the server list and add an M3U playlist or a MAG portal first.":
         u"افتح قائمة السيرفرات وأضف قائمة M3U أو بورتال MAG أولًا.",
@@ -93,6 +98,8 @@ _AR = {
         u"OK شاشة مصغرة  •  أخضر بحث  •  أصفر مفضلة  •  أزرق تحديث  •  أحمر رجوع",
     "OK mini TV  •  OK again full screen  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back":
         u"OK شاشة مصغرة  •  OK مرة أخرى شاشة كاملة  •  أخضر بحث  •  أصفر مفضلة  •  أزرق تحديث  •  أحمر رجوع",
+    "OK: mini TV / full screen\nGREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back":
+        u"OK: شاشة مصغرة / شاشة كاملة\nأخضر بحث  •  أصفر مفضلة  •  أزرق تحديث  •  أحمر رجوع",
     "OK info  •  LEFT/RIGHT volume  •  YELLOW mute  •  UP/BACK back":
         u"OK معلومات  •  يسار/يمين الصوت  •  أصفر كتم  •  أعلى/BACK رجوع",
     "OK play  •  GREEN search  •  BLUE reload  •  RED back":
@@ -197,7 +204,15 @@ _AR = {
     "Reloading portal ...": u"جارٍ تحديث البورتال ...",
     # settings
     "Player settings": u"إعدادات المشغل",
+    "Save settings": u"حفظ الإعدادات",
+    "Settings saved": u"تم حفظ الإعدادات",
+    "You have unsaved changes. Save them now?":
+        u"لديك تغييرات غير محفوظة. هل تريد حفظها الآن؟",
+    "LEFT/RIGHT change  •  OK action  •  GREEN save  •  RED close":
+        u"يسار/يمين تغيير  •  OK تنفيذ  •  أخضر حفظ  •  أحمر إغلاق",
     "Language": u"اللغة",
+    "Font": u"الخط",
+    "Default": u"الافتراضي",
     "Stream engine": u"محرك البث",
     "HTTP timeout (seconds)": u"مهلة الاتصال (ثواني)",
     "Page size": u"حجم الصفحة",
