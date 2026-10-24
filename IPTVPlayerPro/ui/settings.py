@@ -6,8 +6,22 @@ from __future__ import absolute_import
 from ..core.i18n import _, language_label, set_language
 from ..core.store import VERSION
 from ..core.util import safe_int, to_text
-from .base import ListScreen, info_box, row_entry, yes_no
+from .base import (FONT_ORDER, ListScreen, LiveList, font, info_box,
+                   row_entry, set_active_font, yes_no)
 
+
+FONT_CHOICES = ["default"] + list(FONT_ORDER)
+FONT_LABELS = {
+    "dejavu": u"DejaVu",
+    "bein": u"beIN (AR/EN)",
+    "premier": u"Premier League (EN)",
+    "cairo": u"Cairo",
+    "tajawal": u"Tajawal",
+    "almarai": u"Almarai",
+    "changa": u"Changa",
+    "elmessiri": u"El Messiri",
+    "lemonada": u"Lemonada",
+}
 
 SERVICE_TYPES = [
     (4097, u"4097  \u2022  GStreamer"),
@@ -18,18 +32,6 @@ SERVICE_TYPES = [
 TIMEOUTS = [10, 15, 20, 30, 45, 60]
 CACHE_HOURS = [0, 1, 3, 6, 12, 24, 48]
 WEB_PORTS = [8099, 8088, 8080, 9090, 8000]
-M3U_FILES = [
-    "/etc/enigma2/IPTVPlayerPro/m3u.txt",
-    "/media/hdd/IPTVPlayerPro/m3u.txt",
-    "/media/usb/IPTVPlayerPro/m3u.txt",
-    "/media/usb/m3u.txt",
-]
-MAC_FILES = [
-    "/etc/enigma2/IPTVPlayerPro/mac.txt",
-    "/media/hdd/IPTVPlayerPro/mac.txt",
-    "/media/usb/IPTVPlayerPro/mac.txt",
-    "/media/usb/mac.txt",
-]
 
 
 def storage_label(value):
@@ -41,25 +43,59 @@ def storage_label(value):
     return text
 
 
+def font_label(value):
+    return FONT_LABELS.get(value, _("Default"))
+
+
+class SettingsList(LiveList):
+    """58 px rows with text sized like the screen hint.
+
+    The hint is drawn by the skin at 18 px (scaled by the receiver), while
+    list fonts are absolute pixels.  On a 1080p receiver the hint therefore
+    looks larger than a 24 px list font.  These sizes match the hint while
+    keeping the same row height as the CHANNELS list.
+    """
+
+    def apply_fonts(self):
+        self.l.setFont(1, font(20))
+        self.l.setFont(2, font(28, True))
+        self.l.setFont(3, font(28, True))
+
+
 class SettingsScreen(ListScreen):
-    item_height = 72
+    # Keep the compact 58 px rows used by the CHANNELS list, but use a
+    # larger, hint-sized font so the settings text is readable on 1080p.
+    item_height = 58
+    list_class = SettingsList
 
     def __init__(self, session, store):
-        ListScreen.__init__(self, session, _("Player settings"), u"", _("OK change  •  RED close"))
+        ListScreen.__init__(self, session, _("Player settings"), u"",
+                            _("LEFT/RIGHT change  •  OK action  •  GREEN save  •  RED close"))
         self.store = store
+        set_active_font(self.store.settings.get("font") or "default")
+        try:
+            self["list"].apply_fonts()
+        except Exception:
+            pass
+        # Changes are staged here until the user selects "Save settings".
+        self.draft = dict(self.store.settings)
         self.options = []
         self.build_options()
         self.render()
 
     # --------------------------------------------------------------- build
     def build_options(self):
-        settings = self.store.settings
-        language = set_language(settings.get("language") or "ar")
+        language = set_language(self.draft.get("language") or "ar")
         options = [
             {
                 "key": "language", "label": _("Language"),
                 "values": ["ar", "en"],
                 "display": lambda value: language_label(value),
+            },
+            {
+                "key": "font", "label": _("Font"),
+                "values": FONT_CHOICES,
+                "display": font_label,
             },
             {
                 "key": "service_type", "label": _("Stream engine"),
@@ -87,13 +123,7 @@ class SettingsScreen(ListScreen):
                 "display": lambda value: u"{0} h".format(value),
             },
             {
-                "key": "m3u_file", "label": _("M3U servers file"),
-                "values": M3U_FILES,
-                "display": storage_label,
-            },
-            {
-                "key": "mac_file", "label": _("MAG servers file"),
-                "values": MAC_FILES,
+                "key": "data_dir", "label": _("Data folder"),
                 "display": storage_label,
             },
             {"key": "import_files", "label": _("Import from server files"), "action": True},
@@ -111,12 +141,12 @@ class SettingsScreen(ListScreen):
             {"key": "web_info", "label": _("Web interface address"), "action": True},
             {"key": "clear_cache", "label": _("Clear cache"), "action": True},
             {"key": "about", "label": _("About"), "action": True},
+            {"key": "save_settings", "label": _("Save settings"), "action": True},
         ]
         self.options = options
         self.language = language
 
     def render(self):
-        settings = self.store.settings
         rows = []
         entries = []
         for option in self.options:
@@ -124,16 +154,20 @@ class SettingsScreen(ListScreen):
             if option.get("action"):
                 value = u""
             else:
-                value = option["display"](settings.get(option["key"]))
-            entries.append(row_entry(1200, 66, option["label"], value=value))
-        self.set_entries(entries, rows)
+                value = option["display"](self.draft.get(option["key"]))
+            entries.append(row_entry(1200, self.item_height, option["label"],
+                                     value=value, value_size=20))
+        self.set_entries(entries, rows, keep_position=True)
         self.set_title(_("Player settings"))
         self.set_subtitle(_("IPTV Player Pro") + u"  \u2022  " + _("Version") + u" " + VERSION)
-        self.set_hint(_("OK change  •  RED close"))
+        self.set_hint(_("LEFT/RIGHT change  •  OK action  •  GREEN save  •  RED close"))
 
     # ------------------------------------------------------------- actions
     def activate(self, row):
         key = row.get("key")
+        if key == "save_settings":
+            self.save_changes()
+            return
         if key == "clear_cache":
             yes_no(self.session, _("Clear the cached playlists, EPG and logos?"), self._clear_confirmed)
             return
@@ -152,26 +186,109 @@ class SettingsScreen(ListScreen):
         if key == "sync_files":
             self.sync_files()
             return
+        if row.get("values"):
+            self.step(1)
+
+    def step(self, direction):
+        """Change the focused value with the LEFT/RIGHT keys."""
+        row = self.current()
+        if not row:
+            return
         values = row.get("values") or []
         if not values:
             return
-        current = self.store.settings.get(key)
+        key = row.get("key")
         try:
-            index = values.index(current)
+            index = values.index(self.draft.get(key))
         except ValueError:
             index = -1
-        value = values[(index + 1) % len(values)]
-        self.store.set_setting(key, value)
+        if direction > 0:
+            index = (index + 1) % len(values)
+        elif index < 0:
+            index = len(values) - 1
+        else:
+            index = (index - 1) % len(values)
+        self.draft[key] = values[index]
         if key == "language":
-            set_language(value)
+            set_language(values[index])
             self.build_options()
-        elif key in ("web_enabled", "web_port"):
-            started = self.apply_web()
-            if key == "web_enabled" and value and started:
-                self.show_web_info()
-        elif key in ("m3u_file", "mac_file"):
-            self.sync_files()
+        elif key == "font":
+            set_active_font(values[index])
+            try:
+                self["list"].apply_fonts()
+            except Exception:
+                pass
+            self.apply_label_fonts()
         self.render()
+
+    def key_left(self):
+        self.step(-1)
+
+    def key_right(self):
+        self.step(1)
+
+    def key_green(self):
+        self.save_changes()
+
+    def _dirty(self):
+        for option in self.options:
+            key = option.get("key")
+            if option.get("action") or not option.get("values"):
+                continue
+            if self.draft.get(key) != self.store.settings.get(key):
+                return True
+        return False
+
+    def save_changes(self, close_after=False):
+        pending = {}
+        for option in self.options:
+            key = option.get("key")
+            if option.get("action") or not option.get("values"):
+                continue
+            value = self.draft.get(key)
+            if value != self.store.settings.get(key):
+                pending[key] = value
+        showed = False
+        if pending:
+            try:
+                self.store.set_settings(pending)
+            except Exception as error:
+                self.show_error(error)
+                return
+            self.draft = dict(self.store.settings)
+            if "language" in pending:
+                set_language(self.store.settings.get("language") or "ar")
+                self.build_options()
+            if "font" in pending:
+                set_active_font(self.store.settings.get("font") or "default")
+                try:
+                    self["list"].apply_fonts()
+                except Exception:
+                    pass
+                self.apply_label_fonts()
+            if "web_enabled" in pending or "web_port" in pending:
+                self.apply_web()
+            self.render()
+        if close_after:
+            self.close()
+            return
+        if not showed:
+            info_box(self.session, _("Settings saved"))
+
+    def request_close(self):
+        if self._dirty():
+            yes_no(self.session, _("You have unsaved changes. Save them now?"),
+                   self._close_answer)
+        else:
+            self.close()
+
+    def _close_answer(self, answer):
+        if answer:
+            self.save_changes(close_after=True)
+            return
+        set_language(self.store.settings.get("language") or "ar")
+        set_active_font(self.store.settings.get("font") or "default")
+        self.close()
 
     def apply_web(self):
         try:
@@ -239,7 +356,7 @@ class SettingsScreen(ListScreen):
         info_box(self.session, _("Cache cleared"))
 
     def key_red(self):
-        self.close()
+        self.request_close()
 
     def key_back(self):
-        self.close()
+        self.request_close()

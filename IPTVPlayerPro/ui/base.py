@@ -33,6 +33,31 @@ from ..core.util import md5, safe_int, stream_url_with_headers, to_text
 
 PLUGIN_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGE_PATH = os.path.join(PLUGIN_PATH, "images")
+FONT_PATH = os.path.join(PLUGIN_PATH, "fonts")
+
+# Fonts shipped with the plugin.  The key is the value stored in the settings;
+# the tuple is (file name, alias registered with Enigma2).
+FONT_FILES = {
+    "dejavu": ("DejaVuSans.ttf", "IPTVPlayerPro_DejaVu"),
+    "bein": ("beIN Normal.ttf", "IPTVPlayerPro_beIN"),
+    "premier": ("Premier_League.ttf", "IPTVPlayerPro_Premier"),
+    "cairo": ("Cairo-Regular.ttf", "IPTVPlayerPro_Cairo"),
+    "tajawal": ("Tajawal-Regular.ttf", "IPTVPlayerPro_Tajawal"),
+    "almarai": ("Almarai-Regular.ttf", "IPTVPlayerPro_Almarai"),
+    "changa": ("Changa-Regular.ttf", "IPTVPlayerPro_Changa"),
+    "elmessiri": ("ElMessiri-Regular.ttf", "IPTVPlayerPro_ElMessiri"),
+    "lemonada": ("Lemonada-Regular.ttf", "IPTVPlayerPro_Lemonada"),
+}
+
+# Families that ship a real bold face.  Enigma2 selects a font by alias, so
+# register the bold file separately and let font() use it for bold text.
+FONT_BOLD_FILES = {
+    "dejavu": ("DejaVuSans-Bold.ttf", "IPTVPlayerPro_DejaVu_Bold"),
+}
+
+# Display order in Settings.  A tuple keeps the order stable on Python 2.
+FONT_ORDER = ("dejavu", "bein", "premier", "cairo", "tajawal", "almarai",
+              "changa", "elmessiri", "lemonada")
 
 WHITE = "#ffffff"
 GREY = "#b8b8b8"
@@ -42,16 +67,20 @@ ROW_BG = "#15151f"
 ROW_SEL = "#7d0f0f"
 ROW_BG_ALT = "#111119"
 
-# Three-column live browser.  The colours stay close to the supplied Ibo
-# Player Pro mock-up while keeping enough contrast on small TV panels.
-LIVE_ROW_BG = "#171a3f"
-LIVE_ROW_SEL = "#5d4a9f"
-LIVE_TEXT = "#f4f3ff"
-LIVE_MUTED = "#aeb2d6"
-LIVE_ACCENT = "#f5c84b"
+# Three-column live browser.  Keep the live screen on the same deep-red
+# palette as the main menu so the mini TV, lists and panels feel like one UI.
+LIVE_ROW_BG = "#1f0d11"
+LIVE_ROW_SEL = "#7d0f0f"
+LIVE_TEXT = "#ffffff"
+LIVE_MUTED = "#c9a7a7"
+LIVE_ACCENT = "#f0b34a"
 
 _PIXMAPS = {}
 _FONTS = {}
+_ACTIVE_FONT = None
+_ACTIVE_BOLD_FONT = None
+_REGISTERED_FONTS = set()
+_REGISTERED_BOLD_FONTS = set()
 
 
 def image(name):
@@ -71,13 +100,89 @@ def pixmap(name, cache=True):
     return LoadPixmap(path)
 
 
+def _add_font(filename, alias):
+    """Register one bundled font face with Enigma2."""
+    try:
+        from enigma import addFont
+    except Exception:
+        return False
+    path = os.path.join(FONT_PATH, filename)
+    if not os.path.isfile(path):
+        return False
+    try:
+        addFont(path, alias, 100, False, 0)
+        return True
+    except Exception:
+        # Older Enigma2 versions expose addFont with four arguments.
+        try:
+            addFont(path, alias, 100, 0)
+            return True
+        except Exception:
+            return False
+
+
+def register_fonts():
+    """Register the custom fonts bundled with the plugin."""
+    if (len(_REGISTERED_FONTS) >= len(FONT_FILES) and
+            len(_REGISTERED_BOLD_FONTS) >= len(FONT_BOLD_FILES)):
+        return
+    for key, (filename, alias) in FONT_FILES.items():
+        if key not in _REGISTERED_FONTS and _add_font(filename, alias):
+            _REGISTERED_FONTS.add(key)
+    for key, (filename, alias) in FONT_BOLD_FILES.items():
+        if key not in _REGISTERED_BOLD_FONTS and _add_font(filename, alias):
+            _REGISTERED_BOLD_FONTS.add(key)
+
+
+def set_active_font(key):
+    """Select the font used by the plugin's list entries.
+
+    ``key`` is one of the values stored in settings: ``default``, ``dejavu``,
+    ``bein``, ``premier`` or one of the additional bundled fonts.  Unknown or
+    unavailable fonts fall back to the receiver's default face.
+    """
+    global _ACTIVE_FONT, _ACTIVE_BOLD_FONT
+    if key not in FONT_FILES:
+        _ACTIVE_FONT = None
+        _ACTIVE_BOLD_FONT = None
+        return None
+    register_fonts()
+    _ACTIVE_FONT = FONT_FILES[key][1] if key in _REGISTERED_FONTS else None
+    bold = FONT_BOLD_FILES.get(key)
+    _ACTIVE_BOLD_FONT = (bold[1] if bold and key in _REGISTERED_BOLD_FONTS
+                         else None)
+    return _ACTIVE_FONT
+
+
+def active_font():
+    return _ACTIVE_FONT
+
+
+def active_bold_font():
+    return _ACTIVE_BOLD_FONT
+
+
+def skin_factor():
+    """Return the receiver's skin scale (the screens target 720p)."""
+    try:
+        from enigma import getDesktop
+        return max(0.5, getDesktop(0).size().height() / 720.0)
+    except Exception:
+        return 1.0
+
+
 def font(size, bold=False, font_name=None):
-    key = (size, bold, font_name)
+    if font_name:
+        name = font_name
+    elif bold and _ACTIVE_BOLD_FONT:
+        name = _ACTIVE_BOLD_FONT
+    else:
+        name = _ACTIVE_FONT or ("Bold" if bold else "Regular")
+    key = (size, name)
     ptr = _FONTS.get(key)
     if ptr is None:
         try:
-            font_basename = font_name or "Regular"
-            ptr = gFont(font_basename, size)
+            ptr = gFont(name, size)
         except Exception:
             ptr = gFont("Regular", size)
         _FONTS[key] = ptr
@@ -102,6 +207,9 @@ class MultiList(MenuList):
     def __init__(self, item_height=72):
         MenuList.__init__(self, [], False, eListboxPythonMultiContent)
         self.l.setItemHeight(item_height)
+        self.apply_fonts()
+
+    def apply_fonts(self):
         self.l.setFont(0, font(22))
         self.l.setFont(1, font(16))
         self.l.setFont(2, font(23, True))
@@ -114,16 +222,27 @@ class LiveList(MenuList):
     def __init__(self, item_height=58):
         MenuList.__init__(self, [], False, eListboxPythonMultiContent)
         self.l.setItemHeight(item_height)
+        self.apply_fonts()
+
+    def apply_fonts(self):
         self.l.setFont(0, font(18))
         self.l.setFont(1, font(16))
         # Category and channel names use a noticeably larger face so the
         # three-column browser stays readable from a normal viewing distance.
         self.l.setFont(2, font(24, True))
         self.l.setFont(3, font(26, True))
+        # Counts and channel numbers are secondary information: a slightly
+        # smaller face leaves more room for the actual name.
+        self.l.setFont(4, font(14))
 
 
 def category_entry(width, height, title, value=None):
-    """A clean category row with the channel count on the right."""
+    """A category row with the count pinned to the far right edge.
+
+    The name is allowed to use the whole row and the count is drawn on top of
+    a small background mask.  This gives long Arabic/English category names
+    more visible space instead of clipping them early next to the count.
+    """
     title = to_text(title)
     value = to_text(value) if value else u""
     entries = [
@@ -132,16 +251,22 @@ def category_entry(width, height, title, value=None):
             backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
         )
     ]
-    value_width = 66 if value else 0
+    value_width = 52 if value else 0
     entries.append(MultiContentEntryText(
-        pos=(16, 0), size=(width - 16 - value_width - 10, height),
+        pos=(12, 0), size=(width - 12, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
         text=title, color=LIVE_TEXT, color_sel=WHITE,
     ))
     if value:
+        mask_x = width - value_width - 4
+        entries.append(MultiContentEntryRectangle(
+            pos=(mask_x, 1), size=(width - mask_x, height - 2),
+            backgroundColor=LIVE_ROW_BG,
+            backgroundColorSelected=LIVE_ROW_SEL,
+        ))
         entries.append(MultiContentEntryText(
-            pos=(width - value_width - 10, 0), size=(value_width, height),
-            font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            pos=(mask_x, 0), size=(value_width, height),
+            font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
             text=value, color=LIVE_MUTED, color_sel=WHITE,
         ))
     return entries
@@ -159,39 +284,47 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
         )
     ]
     number_text = u"{0:02d}".format(number) if number else u""
-    number_width = 42 if number_text else 0
-    if number_text:
-        entries.append(MultiContentEntryText(
-            pos=(width - number_width - 6, 0), size=(number_width, height),
-            font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
-            text=number_text, color=LIVE_MUTED, color_sel=WHITE,
-        ))
-    icon_x = 12
+    number_width = 36 if number_text else 0
+    icon_x = 10
     if icon is not None:
         entries.append(MultiContentEntryPixmapAlphaTest(
             pos=(icon_x, (height - 32) // 2), size=(32, 32), png=icon,
         ))
-    text_x = icon_x + 44
-    badge_width = 26 if favorite else 0
-    text_width = max(40, width - text_x - number_width - badge_width - 12)
+    text_x = icon_x + 40
+    badge_width = 24 if favorite else 0
     entries.append(MultiContentEntryText(
-        pos=(text_x, 0), size=(text_width, height),
+        pos=(text_x, 0), size=(width - text_x, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
         text=title, color=LIVE_TEXT, color_sel=WHITE,
     ))
+    if number_text or favorite:
+        mask_x = width - number_width - badge_width - 6
+        if mask_x < text_x:
+            mask_x = text_x
+        entries.append(MultiContentEntryRectangle(
+            pos=(mask_x, 1), size=(width - mask_x, height - 2),
+            backgroundColor=bg, backgroundColorSelected=selected_bg,
+        ))
     if favorite:
         entries.append(MultiContentEntryText(
-            pos=(width - number_width - badge_width - 12, 0),
+            pos=(width - number_width - badge_width - 4, 0),
             size=(badge_width, height),
             font=2, flags=RT_HALIGN_CENTER | RT_VALIGN_CENTER,
             text=u"\u2605", color=LIVE_ACCENT, color_sel=WHITE,
+        ))
+    if number_text:
+        entries.append(MultiContentEntryText(
+            pos=(width - number_width - 4, 0), size=(number_width, height),
+            font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            text=number_text, color=LIVE_MUTED, color_sel=WHITE,
         ))
     return entries
 
 
 
 def row_entry(width, height, title, subtitle=None, icon=None, icon_size=(44, 44),
-              value=None, badge=None, selected_bg=ROW_SEL, bg=ROW_BG):
+              value=None, badge=None, selected_bg=ROW_SEL, bg=ROW_BG,
+              value_size=16):
     title = to_text(title)
     subtitle = to_text(subtitle) if subtitle else u""
     value = to_text(value) if value else u""
@@ -211,7 +344,8 @@ def row_entry(width, height, title, subtitle=None, icon=None, icon_size=(44, 44)
         text_x = 12 + icon_w + 14
     value_width = 0
     if value:
-        value_width = min(300, max(90, len(to_text(value)) * 11 + 20))
+        char_width = max(11, int(value_size * 0.65))
+        value_width = min(360, max(90, len(to_text(value)) * char_width + 24))
         entries.append(MultiContentEntryText(
             pos=(width - value_width - 16, 0), size=(value_width, height),
             font=1, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
@@ -385,6 +519,7 @@ class ListScreen(AsyncScreen):
     """
 
     item_height = 72
+    list_class = MultiList
 
     def __init__(self, session, title=u"", subtitle=u"", hint=u""):
         AsyncScreen.__init__(self, session)
@@ -395,7 +530,7 @@ class ListScreen(AsyncScreen):
         self["subtitle"] = Label()
         self["status"] = Label()
         self["hint"] = Label()
-        self["list"] = MultiList(self.item_height)
+        self["list"] = self.list_class(self.item_height)
         self.rows = []
         self["title"].setText(to_text(title))
         self["subtitle"].setText(to_text(subtitle))
@@ -406,6 +541,8 @@ class ListScreen(AsyncScreen):
         ], {
             "up": self.key_up,
             "down": self.key_down,
+            "left": self.key_left,
+            "right": self.key_right,
             "pageUp": self.key_page_up,
             "pageDown": self.key_page_down,
             "top": self.key_top,
@@ -425,6 +562,7 @@ class ListScreen(AsyncScreen):
     def _layout_ready(self):
         set_background(self)
         set_logo(self)
+        self.apply_label_fonts()
         try:
             self["list"].enableAutoNavigation(False)
         except Exception:
@@ -432,7 +570,31 @@ class ListScreen(AsyncScreen):
         self.layout_ready()
 
     def _shown(self):
+        try:
+            self["list"].apply_fonts()
+        except Exception:
+            pass
+        self.apply_label_fonts()
         self.shown_ready()
+
+    def apply_label_fonts(self):
+        """Apply the selected font to the skin-drawn labels.
+
+        The inline skins are written for 1280x720, so their font sizes must
+        be multiplied by the receiver's skin factor before being passed to
+        gFont().
+        """
+        scale = skin_factor()
+        for name, size in (("title", 30), ("subtitle", 18),
+                           ("status", 18), ("hint", 18)):
+            widget = self.get(name)
+            instance = getattr(widget, "instance", None) if widget is not None else None
+            if instance is None:
+                continue
+            try:
+                instance.setFont(font(int(round(size * scale))))
+            except Exception:
+                pass
 
     def layout_ready(self):
         pass
@@ -489,6 +651,12 @@ class ListScreen(AsyncScreen):
 
     def key_down(self):
         self["list"].goLineDown()
+
+    def key_left(self):
+        pass
+
+    def key_right(self):
+        pass
 
     def key_page_up(self):
         self["list"].goPageUp()
@@ -572,23 +740,44 @@ class PosterLoader(object):
 
 def download_poster(url, store, timeout=15):
     """Download artwork to the cache and return the local file."""
+    return download_logo(url, store, kind="poster", timeout=timeout)
 
-    def _download():
-        target = store.logo_file(url, "poster")
-        if os.path.exists(target) and os.path.getsize(target) > 256:
-            return target
-        http = Http(timeout=timeout)
-        data, _handle = http.request(url)
-        if not data or len(data) < 128:
-            return ""
-        handle = open(target, "wb")
-        try:
-            handle.write(data)
-        finally:
-            handle.close()
+
+_DOWNLOADING_LOGOS = set()
+_LOGO_LOCK = threading.Lock()
+
+def download_logo(url, store, kind="logo", timeout=10):
+    """Download channel logo or poster to local cache."""
+    url = to_text(url).strip()
+    if not url or not url.startswith(("http://", "https://")):
+        return ""
+    target = store.logo_file(url, kind=kind)
+    if os.path.exists(target) and os.path.getsize(target) > 128:
         return target
-
-    return _download()
+    with _LOGO_LOCK:
+        if url in _DOWNLOADING_LOGOS:
+            return ""
+        _DOWNLOADING_LOGOS.add(url)
+    try:
+        http = Http(timeout=timeout, retries=1)
+        data, _handle = http.request(url)
+        if not data or len(data) < 64:
+            return ""
+        tmp = target + ".part"
+        with open(tmp, "wb") as handle:
+            handle.write(data)
+        if os.path.exists(target):
+            try:
+                os.remove(target)
+            except Exception:
+                pass
+        os.rename(tmp, target)
+        return target
+    except Exception:
+        return ""
+    finally:
+        with _LOGO_LOCK:
+            _DOWNLOADING_LOGOS.discard(url)
 
 
 def play_url(session, url, service_type=4097, name=u"", item_ua=None, item_opts=None):

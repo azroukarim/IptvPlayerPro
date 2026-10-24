@@ -19,7 +19,7 @@ from ..core.epg import clock_text
 from ..core.i18n import _
 from ..core.util import human_count, safe_int, to_text
 from .base import (AsyncScreen, ListScreen, LiveList, category_entry,
-                   channel_entry, font, info_box, pixmap, play_url, row_entry,
+                   channel_entry, download_logo, font, info_box, pixmap, play_url, row_entry,
                    skin_factor)
 from .info import InfoScreen
 from .player import LivePlayerScreen
@@ -271,11 +271,11 @@ class LiveScreen(BackendScreen):
         else:
             self.status_text(u"")
 
-    def _channel_icon(self, item):
+    def _channel_icon(self, item, trigger_download=True):
         logo = to_text(item.get("logo"))
         if logo:
             local = self.store.logo_file(logo)
-            if os.path.exists(local):
+            if os.path.exists(local) and os.path.getsize(local) > 64:
                 try:
                     from Tools.LoadPixmap import LoadPixmap
                     pointer = LoadPixmap(local, cached=False)
@@ -283,7 +283,22 @@ class LiveScreen(BackendScreen):
                         return pointer
                 except Exception:
                     pass
+            elif trigger_download:
+                self._trigger_logo_download(logo, item)
         return pixmap("channel.png")
+
+    def _trigger_logo_download(self, logo, item):
+        def _bg_dl():
+            return download_logo(logo, self.store)
+        def _on_done(path):
+            if path and os.path.exists(path):
+                curr = self.selected_channel()
+                if curr and to_text(curr.get("logo")) == logo:
+                    self.update_preview()
+        try:
+            self.run_async(_bg_dl, _on_done, lambda e: None)
+        except Exception:
+            pass
 
     def activate(self, item):
         self.play_item(item)
@@ -384,6 +399,7 @@ class LiveBrowserScreen(BackendScreen):
         self["previewVideo"] = VideoWindow(decoder=0, fb_width=1280, fb_height=720)
         self["previewKind"] = Label()
         self["previewLogo"] = Pixmap()
+        self["previewChannelLogo"] = Pixmap()
         self["previewName"] = Label()
         self["previewMeta"] = Label()
         self["previewEpgNow"] = Label()
@@ -477,6 +493,8 @@ class LiveBrowserScreen(BackendScreen):
         self["previewEpgNext"].setText(u"")
         self["previewFav"].setText(u"")
         self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
+        if "previewChannelLogo" in self:
+            self["previewChannelLogo"].instance.setPixmap(pixmap("channel.png"))
         self["status"].setText(u"")
         self["source"].setText(u"")
         self.update_source()
@@ -992,11 +1010,11 @@ class LiveBrowserScreen(BackendScreen):
             or item.get("name")
         )
 
-    def _channel_icon(self, item):
+    def _channel_icon(self, item, trigger_download=True):
         logo = to_text(item.get("logo"))
         if logo:
             local = self.store.logo_file(logo)
-            if os.path.exists(local):
+            if os.path.exists(local) and os.path.getsize(local) > 64:
                 try:
                     from Tools.LoadPixmap import LoadPixmap
                     pointer = LoadPixmap(local, cached=False)
@@ -1004,7 +1022,22 @@ class LiveBrowserScreen(BackendScreen):
                         return pointer
                 except Exception:
                     pass
+            elif trigger_download:
+                self._trigger_logo_download(logo, item)
         return pixmap("channel.png")
+
+    def _trigger_logo_download(self, logo, item):
+        def _bg_dl():
+            return download_logo(logo, self.store)
+        def _on_done(path):
+            if path and os.path.exists(path):
+                curr = self.selected_channel()
+                if curr and to_text(curr.get("logo")) == logo:
+                    self.update_preview()
+        try:
+            self.run_async(_bg_dl, _on_done, lambda e: None)
+        except Exception:
+            pass
 
     def play_item(self, item):
         """Start a channel in the mini TV, or go full-screen on second OK.
@@ -1339,6 +1372,8 @@ class LiveBrowserScreen(BackendScreen):
             self._set_preview_epg(None)
             self["previewFav"].setText(u"")
             self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
+            if "previewChannelLogo" in self:
+                self["previewChannelLogo"].instance.setPixmap(pixmap("channel.png"))
             self["playLabel"].setText(u"OK  " + _("Play"))
             self["favLabel"].setText(u"YELLOW  " + _("Add favorite"))
             return
@@ -1359,7 +1394,10 @@ class LiveBrowserScreen(BackendScreen):
         self._set_preview_epg(item)
         self["previewFav"].setText(
             u"\u2605 " + _("Favorite") if favorite else u"")
-        self["previewLogo"].instance.setPixmap(self._channel_icon(item))
+        icon = self._channel_icon(item)
+        self["previewLogo"].instance.setPixmap(icon)
+        if "previewChannelLogo" in self:
+            self["previewChannelLogo"].instance.setPixmap(icon)
         self["playLabel"].setText(u"OK  " + _("Play"))
         self["favLabel"].setText(
             u"YELLOW  " + (_("Remove favorite") if favorite else _("Add favorite")))

@@ -704,7 +704,11 @@ class Store(object):
     def logo_file(self, url, kind="logo"):
         folder = self.poster_dir if kind == "poster" else self.logo_dir
         ensure_dir(folder)
-        return os.path.join(folder, md5(url))
+        ext = ".png"
+        clean_url = to_text(url).split("?")[0].lower()
+        if clean_url.endswith(".jpg") or clean_url.endswith(".jpeg"):
+            ext = ".jpg"
+        return os.path.join(folder, md5(url) + ext)
 
     def update_info(self, source_id, **values):
         with _STORE_LOCK:

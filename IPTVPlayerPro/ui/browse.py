@@ -14,13 +14,13 @@ from Components.Pixmap import Pixmap
 from Components.VideoWindow import VideoWindow
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 
-from ..core import prefetch
-from ..core.backends import active_backend, source_label
+from ..core.backends import source_label
 from ..core.epg import clock_text
 from ..core.i18n import _
 from ..core.util import human_count, safe_int, to_text
 from .base import (AsyncScreen, ListScreen, LiveList, category_entry,
-                   channel_entry, info_box, pixmap, play_url, row_entry)
+                   channel_entry, download_logo, font, info_box, pixmap, play_url, row_entry,
+                   skin_factor)
 from .info import InfoScreen
 from .player import LivePlayerScreen
 from .skins import LIVE_SKIN
@@ -41,6 +41,10 @@ LIVE_VIDEO_RECT = (744, 104, 512, 300)
 class BackendScreen(ListScreen):
     """Base for screens that need a loaded backend catalogue."""
 
+    # Subclasses set this to "live", "movies" or "series".  It lets a screen
+    # prepare only its own section instead of downloading the whole portal.
+    section = u""
+
     def __init__(self, session, store, backend, title, subtitle=u"", hint=u""):
         ListScreen.__init__(self, session, title, subtitle, hint)
         self.store = store
@@ -49,7 +53,6 @@ class BackendScreen(ListScreen):
         self.query = u""
         self.page = 1
         self.total = 0
-        self._prefetch_reload = False
 
     def shown_ready(self):
         if not self.started:
@@ -66,69 +69,60 @@ class BackendScreen(ListScreen):
             self.backend.ensure_fresh()
         except Exception:
             pass
-        if self.backend.is_ready():
+        if self.ready():
             self.build()
             return
-        # The background preparation must never delay the browser: the live
-        # channels are already in the cache and are loaded right away.
         self._load_backend()
+
+    def ready(self):
+        backend = self.backend
+        section = self.section
+        try:
+            if section == "live":
+                check = getattr(backend, "is_live_ready", None)
+                return bool(check() if check else backend.is_ready())
+            if section == "movies":
+                check = getattr(backend, "is_vod_categories_ready", None)
+                if check:
+                    return bool(check())
+                return bool(backend.is_vod_ready())
+            if section == "series":
+                check = getattr(backend, "is_series_categories_ready", None)
+                if check:
+                    return bool(check())
+                return bool(backend.is_series_ready())
+            return bool(backend.is_ready())
+        except Exception:
+            return False
+
+    def prepare_backend(self, progress, force=False):
+        prepare_section = getattr(self.backend, "prepare_section", None)
+        if self.section and prepare_section:
+            return prepare_section(self.section, progress=progress, force=force)
+        return self.backend.refresh(force=force, progress=progress)
 
     def _load_backend(self):
         progress = {"text": _("Loading ...")}
 
-        def report(text):
+        def report(text, percent=None):
             progress["text"] = to_text(text)
 
         network_timeout = safe_int(self.store.settings.get("timeout"), 20)
         limit = max(45, network_timeout * 3 + 10)
         self.status_text(progress["text"])
         self.run_async(
-            lambda: self.backend.refresh(progress=report),
+            lambda: self.prepare_backend(report),
             self._loaded,
             self._load_failed,
             timeout=limit,
             on_wait=lambda: self.status_text(progress["text"]),
         )
 
-    def _wait_for_prefetch(self, source_id, reload=False):
-        """Wait for the background preparation before opening a VOD list."""
-        self._prefetch_reload = reload
-        self.status_text(prefetch.status_text(source_id) or _("Preparing ..."))
-        self.run_async(
-            lambda: prefetch.wait(source_id, timeout=60),
-            self._prefetch_wait_done,
-            self._prefetch_wait_failed,
-            timeout=70,
-            on_wait=lambda: self.status_text(
-                prefetch.status_text(source_id) or _("Preparing ...")),
-        )
-
-    def waits_for_prefetch(self):
-        """Only the movies and series lists wait for the preparation."""
-        return False
-
-    def _prepare_reloaded_backend(self):
-        self.backend = active_backend(self.store)
-        try:
-            self.backend.ensure_fresh()
-        except Exception:
-            pass
-        self._epg_retry_at = 0
-
-    def _prefetch_wait_done(self, _result):
-        if self._prefetch_reload:
-            self._prepare_reloaded_backend()
-        self._load_backend()
-
-    def _prefetch_wait_failed(self, _error):
-        # A timeout in the wait helper is not fatal: the normal refresh below
-        # can still use whatever the worker has written so far.
-        if self._prefetch_reload:
-            self._prepare_reloaded_backend()
-        self._load_backend()
-
     def _loaded(self, _result):
         self.status_text(u"")
+        if not self.ready():
+            self.show_error(_("Preparation failed"))
+            return
         self.build()
 
     def _load_failed(self, error):
@@ -185,23 +179,16 @@ class BackendScreen(ListScreen):
 
     # -------------------------------------------------------------- refresh
     def reload_backend(self):
-        source = self.store.active_source() or {}
-        source_id = to_text(source.get("id"))
-        if source_id and prefetch.enabled(self.store):
-            started = prefetch.start(self.store, source_id, force=True)
-            if started or prefetch.running(source_id):
-                self._wait_for_prefetch(source_id, reload=True)
-                return
         progress = {"text": _("Refreshing ...")}
 
-        def report(text):
+        def report(text, percent=None):
             progress["text"] = to_text(text)
 
         network_timeout = safe_int(self.store.settings.get("timeout"), 20)
         limit = max(45, network_timeout * 3 + 10)
         self.status_text(progress["text"])
         self.run_async(
-            lambda: self.backend.refresh(force=True, progress=report),
+            lambda: self.prepare_backend(report, force=True),
             self._reloaded,
             self._load_failed,
             timeout=limit,
@@ -210,11 +197,16 @@ class BackendScreen(ListScreen):
 
     def _reloaded(self, _result):
         self.status_text(u"")
+        if not self.ready():
+            self.show_error(_("Preparation failed"))
+            return
         self._epg_retry_at = 0
         self.build()
 
 
 class LiveCategoriesScreen(BackendScreen):
+    section = "live"
+
     def __init__(self, session, store, backend):
         BackendScreen.__init__(self, session, store, backend, _("Live TV"),
                                source_label(store.active_source()), _("OK open  •  RED back"))
@@ -247,6 +239,8 @@ class LiveCategoriesScreen(BackendScreen):
 
 
 class LiveScreen(BackendScreen):
+    section = "live"
+
     def __init__(self, session, store, backend, category):
         BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Live TV"),
                                u"", _("OK play  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
@@ -277,11 +271,11 @@ class LiveScreen(BackendScreen):
         else:
             self.status_text(u"")
 
-    def _channel_icon(self, item):
+    def _channel_icon(self, item, trigger_download=True):
         logo = to_text(item.get("logo"))
         if logo:
             local = self.store.logo_file(logo)
-            if os.path.exists(local):
+            if os.path.exists(local) and os.path.getsize(local) > 64:
                 try:
                     from Tools.LoadPixmap import LoadPixmap
                     pointer = LoadPixmap(local, cached=False)
@@ -289,7 +283,22 @@ class LiveScreen(BackendScreen):
                         return pointer
                 except Exception:
                     pass
+            elif trigger_download:
+                self._trigger_logo_download(logo, item)
         return pixmap("channel.png")
+
+    def _trigger_logo_download(self, logo, item):
+        def _bg_dl():
+            return download_logo(logo, self.store)
+        def _on_done(path):
+            if path and os.path.exists(path):
+                curr = self.selected_channel()
+                if curr and to_text(curr.get("logo")) == logo:
+                    self.update_preview()
+        try:
+            self.run_async(_bg_dl, _on_done, lambda e: None)
+        except Exception:
+            pass
 
     def activate(self, item):
         self.play_item(item)
@@ -329,6 +338,7 @@ class LiveBrowserScreen(BackendScreen):
     """
 
     skin = LIVE_SKIN
+    section = "live"
 
     def __init__(self, session, store, backend):
         AsyncScreen.__init__(self, session)
@@ -368,9 +378,8 @@ class LiveBrowserScreen(BackendScreen):
         self["header"] = Pixmap()
         self["logo"] = Pixmap()
         self["navLive"] = Label()
-        self["navMovies"] = Label()
-        self["navSeries"] = Label()
         self["searchPill"] = Pixmap()
+        self["searchIcon"] = Pixmap()
         self["searchText"] = Label()
         self["status"] = Label()
         self["source"] = Label()
@@ -390,11 +399,11 @@ class LiveBrowserScreen(BackendScreen):
         self["previewVideo"] = VideoWindow(decoder=0, fb_width=1280, fb_height=720)
         self["previewKind"] = Label()
         self["previewLogo"] = Pixmap()
+        self["previewChannelLogo"] = Pixmap()
         self["previewName"] = Label()
         self["previewMeta"] = Label()
         self["previewEpgNow"] = Label()
         self["previewEpgNext"] = Label()
-        self["previewUrl"] = Label()
         self["previewFav"] = Label()
         self["playBg"] = Pixmap()
         self["playLabel"] = Label()
@@ -423,7 +432,7 @@ class LiveBrowserScreen(BackendScreen):
         }, prio=0, description=_("IPTV Player Pro"))
 
         self.onLayoutFinish.append(self._layout_ready)
-        self.onShown.append(self.shown_ready)
+        self.onShown.append(self._shown_live)
         # Returning from a dialog re-shows the screen.  Re-apply the preview
         # immediately instead of waiting for the keep-alive timer.
         self.onShow.append(self._preview_shown)
@@ -438,6 +447,29 @@ class LiveBrowserScreen(BackendScreen):
         self.onClose.append(self.release_channel_rows)
 
     # -------------------------------------------------------------- layout
+    def _shown_live(self):
+        self.apply_live_fonts()
+        self.shown_ready()
+
+    def apply_live_fonts(self):
+        """Apply the selected font to the live browser headers and lists."""
+        for name in ("categories", "channels"):
+            try:
+                self[name].apply_fonts()
+            except Exception:
+                pass
+        scale = skin_factor()
+        size = int(round(22 * scale))
+        for name in ("catHeader", "chHeader"):
+            widget = self.get(name)
+            instance = getattr(widget, "instance", None) if widget is not None else None
+            if instance is None:
+                continue
+            try:
+                instance.setFont(font(size, True))
+            except Exception:
+                pass
+
     def _layout_ready(self):
         self["bg"].instance.setPixmap(pixmap("live_bg.png"))
         self["header"].instance.setPixmap(pixmap("live_header.png"))
@@ -447,23 +479,22 @@ class LiveBrowserScreen(BackendScreen):
         self["rightPanel"].instance.setPixmap(pixmap("live_panel_right.png"))
         self["preview"].instance.setPixmap(pixmap("live_preview.png"))
         self["searchPill"].instance.setPixmap(pixmap("live_search.png"))
+        self["searchIcon"].instance.setPixmap(pixmap("live_search_icon.png"))
         self["playBg"].instance.setPixmap(pixmap("live_button.png"))
         self["favBg"].instance.setPixmap(pixmap("live_button_dark.png"))
 
         self["navLive"].setText(_("Live TV"))
-        self["navMovies"].setText(_("Movies"))
-        self["navSeries"].setText(_("Series"))
-        self["searchText"].setText(u"GREEN  " + _("Search channels"))
-        self["hint"].setText(_("OK mini TV  •  OK again full screen  •  GREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
+        self["hint"].setText(_("OK: mini TV / full screen\nGREEN search  •  YELLOW favorite  •  BLUE reload  •  RED back"))
         self["playLabel"].setText(u"OK  " + _("Play"))
         self["previewKind"].setText(_("CHANNEL PREVIEW"))
         self["previewName"].setText(_("Live TV"))
         self["previewMeta"].setText(u"")
         self["previewEpgNow"].setText(u"")
         self["previewEpgNext"].setText(u"")
-        self["previewUrl"].setText(u"")
         self["previewFav"].setText(u"")
         self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
+        if "previewChannelLogo" in self:
+            self["previewChannelLogo"].instance.setPixmap(pixmap("channel.png"))
         self["status"].setText(u"")
         self["source"].setText(u"")
         self.update_source()
@@ -483,6 +514,7 @@ class LiveBrowserScreen(BackendScreen):
         # The video widget is part of the widget tree but must stay inactive
         # until a channel is explicitly played in the mini TV.
         self._restore_fullscreen_video()
+        self.apply_live_fonts()
 
     # ---------------------------------------------------------- mini TV
     def _video_instance(self):
@@ -978,11 +1010,11 @@ class LiveBrowserScreen(BackendScreen):
             or item.get("name")
         )
 
-    def _channel_icon(self, item):
+    def _channel_icon(self, item, trigger_download=True):
         logo = to_text(item.get("logo"))
         if logo:
             local = self.store.logo_file(logo)
-            if os.path.exists(local):
+            if os.path.exists(local) and os.path.getsize(local) > 64:
                 try:
                     from Tools.LoadPixmap import LoadPixmap
                     pointer = LoadPixmap(local, cached=False)
@@ -990,7 +1022,22 @@ class LiveBrowserScreen(BackendScreen):
                         return pointer
                 except Exception:
                     pass
+            elif trigger_download:
+                self._trigger_logo_download(logo, item)
         return pixmap("channel.png")
+
+    def _trigger_logo_download(self, logo, item):
+        def _bg_dl():
+            return download_logo(logo, self.store)
+        def _on_done(path):
+            if path and os.path.exists(path):
+                curr = self.selected_channel()
+                if curr and to_text(curr.get("logo")) == logo:
+                    self.update_preview()
+        try:
+            self.run_async(_bg_dl, _on_done, lambda e: None)
+        except Exception:
+            pass
 
     def play_item(self, item):
         """Start a channel in the mini TV, or go full-screen on second OK.
@@ -1160,10 +1207,10 @@ class LiveBrowserScreen(BackendScreen):
         self["source"].setText(label)
 
     def update_search_text(self):
-        if self.query:
-            self["searchText"].setText(_("Search") + u": " + self.query)
-        else:
-            self["searchText"].setText(u"GREEN  " + _("Search channels"))
+        # The magnifier icon is the permanent search affordance; the label is
+        # only used to show the active query.  An empty query therefore leaves
+        # the compact search pill clean instead of showing a key hint.
+        self["searchText"].setText(self.query or u"")
 
     # ------------------------------------------------------------------ epg
     def _epg_programmes(self, item):
@@ -1200,7 +1247,8 @@ class LiveBrowserScreen(BackendScreen):
         self["previewEpgNext"].setText(next_text)
         self._set_visible("previewEpgNow", bool(now_text))
         self._set_visible("previewEpgNext", bool(next_text))
-        self._set_visible("previewUrl", not (now_text or next_text))
+        # The stream URL is intentionally not shown under the mini TV.  That
+        # area is reserved for the channel name, its group and the EPG.
 
     def _backend_epg_urls(self):
         method = getattr(self.backend, "epg_urls", None)
@@ -1311,7 +1359,6 @@ class LiveBrowserScreen(BackendScreen):
             self["previewMeta"].setText(u"{0} / {1} {2}".format(
                 self.loaded_count(), self.total, _("channels")))
             self._set_preview_epg(None)
-            self["previewUrl"].setText(u"")
             self["previewFav"].setText(u"")
             self["previewLogo"].instance.setPixmap(pixmap("more.png"))
             self["playLabel"].setText(u"OK  " + _("Load more ..."))
@@ -1323,9 +1370,10 @@ class LiveBrowserScreen(BackendScreen):
             self["previewName"].setText(to_text(name))
             self["previewMeta"].setText(_("No channels"))
             self._set_preview_epg(None)
-            self["previewUrl"].setText(u"")
             self["previewFav"].setText(u"")
             self["previewLogo"].instance.setPixmap(pixmap("channel.png"))
+            if "previewChannelLogo" in self:
+                self["previewChannelLogo"].instance.setPixmap(pixmap("channel.png"))
             self["playLabel"].setText(u"OK  " + _("Play"))
             self["favLabel"].setText(u"YELLOW  " + _("Add favorite"))
             return
@@ -1344,13 +1392,12 @@ class LiveBrowserScreen(BackendScreen):
         self["previewName"].setText(item.get("name") or u"")
         self["previewMeta"].setText(u"  \u2022  ".join(meta))
         self._set_preview_epg(item)
-        url = to_text(item.get("url") or item.get("cmd") or u"")
-        if len(url) > 62:
-            url = url[:59] + u"..."
-        self["previewUrl"].setText(url)
         self["previewFav"].setText(
             u"\u2605 " + _("Favorite") if favorite else u"")
-        self["previewLogo"].instance.setPixmap(self._channel_icon(item))
+        icon = self._channel_icon(item)
+        self["previewLogo"].instance.setPixmap(icon)
+        if "previewChannelLogo" in self:
+            self["previewChannelLogo"].instance.setPixmap(icon)
         self["playLabel"].setText(u"OK  " + _("Play"))
         self["favLabel"].setText(
             u"YELLOW  " + (_("Remove favorite") if favorite else _("Add favorite")))
@@ -1487,6 +1534,8 @@ class LiveBrowserScreen(BackendScreen):
 
 
 class VodCategoriesScreen(BackendScreen):
+    section = "movies"
+
     def __init__(self, session, store, backend):
         BackendScreen.__init__(self, session, store, backend, _("Movies"),
                                source_label(store.active_source()), _("OK open  •  RED back"))
@@ -1515,6 +1564,8 @@ class VodCategoriesScreen(BackendScreen):
 
 
 class VodScreen(BackendScreen):
+    section = "movies"
+
     def __init__(self, session, store, backend, category):
         BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Movies"),
                                u"", _("OK play  •  GREEN search  •  BLUE reload  •  RED back"))
@@ -1596,8 +1647,31 @@ class VodScreen(BackendScreen):
         self.query = u""
         self.reload_backend()
 
+    def reload_backend(self):
+        # Refresh the categories and the current item page, not the complete
+        # portal catalogue.
+        try:
+            self.backend._vod_cache = {}
+            self.backend.vod_ready = False
+        except Exception:
+            pass
+        BackendScreen.reload_backend(self)
+
+    def _reloaded(self, result):
+        # prepare_section() deliberately keeps the old item catalogue.  This
+        # screen wants its visible page refreshed, so make the list lazy again
+        # after the category refresh has finished.
+        try:
+            self.backend._vod_cache = {}
+            self.backend.vod_ready = False
+        except Exception:
+            pass
+        BackendScreen._reloaded(self, result)
+
 
 class SeriesCategoriesScreen(BackendScreen):
+    section = "series"
+
     def __init__(self, session, store, backend):
         BackendScreen.__init__(self, session, store, backend, _("Series"),
                                source_label(store.active_source()), _("OK open  •  RED back"))
@@ -1626,6 +1700,8 @@ class SeriesCategoriesScreen(BackendScreen):
 
 
 class SeriesScreen(BackendScreen):
+    section = "series"
+
     def __init__(self, session, store, backend, category):
         BackendScreen.__init__(self, session, store, backend, category.get("name") or _("Series"),
                                u"", _("OK open  •  GREEN search  •  BLUE reload  •  RED back"))
@@ -1695,8 +1771,28 @@ class SeriesScreen(BackendScreen):
         self.query = u""
         self.reload_backend()
 
+    def reload_backend(self):
+        # Refresh the categories and the current item page, not the complete
+        # portal catalogue.
+        try:
+            self.backend._series_cache = {}
+            self.backend.series_ready = False
+        except Exception:
+            pass
+        BackendScreen.reload_backend(self)
+
+    def _reloaded(self, result):
+        try:
+            self.backend._series_cache = {}
+            self.backend.series_ready = False
+        except Exception:
+            pass
+        BackendScreen._reloaded(self, result)
+
 
 class SeasonsScreen(BackendScreen):
+    section = "series"
+
     def __init__(self, session, store, backend, series):
         BackendScreen.__init__(self, session, store, backend, series.get("name") or _("Series"),
                                u"", _("OK open  •  RED back"))
@@ -1726,6 +1822,8 @@ class SeasonsScreen(BackendScreen):
 
 
 class EpisodesScreen(BackendScreen):
+    section = "series"
+
     def __init__(self, session, store, backend, series, season):
         BackendScreen.__init__(self, session, store, backend, series.get("name") or _("Series"),
                                u"", _("OK play  •  RED back"))

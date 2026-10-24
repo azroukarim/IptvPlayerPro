@@ -15,7 +15,9 @@ from Screens.Screen import Screen
 from ..core.epg import clock_text, now_next
 from ..core.i18n import _
 from ..core.util import safe_int, to_text
-from .base import pixmap
+import os
+from ..core.store import Store
+from .base import download_logo, pixmap
 from .skins import PLAYER_SKIN
 
 
@@ -87,6 +89,7 @@ class LivePlayerScreen(Screen):
             self["channelLogo"].instance.setPixmap(self._logo)
         else:
             self["channelLogo"].instance.setPixmap(pixmap("channel.png"))
+            self._load_channel_logo()
 
         self["title"].setText(u"IPTV Player Pro")
         name = to_text(self.item.get("name") or _("Live TV"))
@@ -107,6 +110,36 @@ class LivePlayerScreen(Screen):
         self.update_volume()
         self.update_epg()
         self._start_info_timer()
+
+    def _load_channel_logo(self):
+        logo = to_text(self.item.get("logo"))
+        if not logo:
+            return
+        store = Store()
+        local = store.logo_file(logo)
+        if os.path.exists(local) and os.path.getsize(local) > 64:
+            try:
+                from Tools.LoadPixmap import LoadPixmap
+                ptr = LoadPixmap(local, cached=False)
+                if ptr is not None:
+                    self["channelLogo"].instance.setPixmap(ptr)
+                    return
+            except Exception:
+                pass
+        import threading
+        def _bg():
+            download_logo(logo, store)
+            if os.path.exists(local) and os.path.getsize(local) > 64:
+                try:
+                    from Tools.LoadPixmap import LoadPixmap
+                    ptr = LoadPixmap(local, cached=False)
+                    if ptr is not None:
+                        self["channelLogo"].instance.setPixmap(ptr)
+                except Exception:
+                    pass
+        t = threading.Thread(target=_bg)
+        t.daemon = True
+        t.start()
 
     def _set_visible(self, name, visible):
         widget = self.get(name)

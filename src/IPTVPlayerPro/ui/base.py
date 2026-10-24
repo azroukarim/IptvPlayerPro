@@ -740,23 +740,44 @@ class PosterLoader(object):
 
 def download_poster(url, store, timeout=15):
     """Download artwork to the cache and return the local file."""
+    return download_logo(url, store, kind="poster", timeout=timeout)
 
-    def _download():
-        target = store.logo_file(url, "poster")
-        if os.path.exists(target) and os.path.getsize(target) > 256:
-            return target
-        http = Http(timeout=timeout)
-        data, _handle = http.request(url)
-        if not data or len(data) < 128:
-            return ""
-        handle = open(target, "wb")
-        try:
-            handle.write(data)
-        finally:
-            handle.close()
+
+_DOWNLOADING_LOGOS = set()
+_LOGO_LOCK = threading.Lock()
+
+def download_logo(url, store, kind="logo", timeout=10):
+    """Download channel logo or poster to local cache."""
+    url = to_text(url).strip()
+    if not url or not url.startswith(("http://", "https://")):
+        return ""
+    target = store.logo_file(url, kind=kind)
+    if os.path.exists(target) and os.path.getsize(target) > 128:
         return target
-
-    return _download()
+    with _LOGO_LOCK:
+        if url in _DOWNLOADING_LOGOS:
+            return ""
+        _DOWNLOADING_LOGOS.add(url)
+    try:
+        http = Http(timeout=timeout, retries=1)
+        data, _handle = http.request(url)
+        if not data or len(data) < 64:
+            return ""
+        tmp = target + ".part"
+        with open(tmp, "wb") as handle:
+            handle.write(data)
+        if os.path.exists(target):
+            try:
+                os.remove(target)
+            except Exception:
+                pass
+        os.rename(tmp, target)
+        return target
+    except Exception:
+        return ""
+    finally:
+        with _LOGO_LOCK:
+            _DOWNLOADING_LOGOS.discard(url)
 
 
 def play_url(session, url, service_type=4097, name=u"", item_ua=None, item_opts=None):

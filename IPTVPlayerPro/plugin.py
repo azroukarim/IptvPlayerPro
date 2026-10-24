@@ -7,15 +7,18 @@ from Plugins.Plugin import PluginDescriptor
 
 from .core.i18n import _
 from .core.store import VERSION
+from .core.refresher import start_timer, stop_timer
 from .ui.menu import MainMenu
 
 
 def main(session, **kwargs):
+    # Start background refresher timer
+    start_timer()
     session.open(MainMenu)
 
 
 def autostart(reason, **kwargs):
-    """Start/stop the local web interface together with Enigma2."""
+    """Start/stop the local web interface and refresher together with Enigma2."""
     try:
         from .web.server import manager
         if reason == 0:
@@ -25,6 +28,7 @@ def autostart(reason, **kwargs):
                 manager.ensure(store)
         elif reason == 1:
             manager.stop()
+            stop_timer()
     except Exception:
         pass
 

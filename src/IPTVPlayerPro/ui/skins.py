@@ -75,8 +75,9 @@ LIVE_SKIN = """
     <widget name="previewVideo" position="744,104" size="512,300" backgroundColor="transparent" />
     <widget name="previewKind" position="762,112" size="250,24" font="Regular;14" halign="left" valign="center" foregroundColor="#b98a8a" transparent="1" />
     <widget name="previewLogo" position="884,142" size="216,216" alphatest="blend" scale="1" />
-    <widget name="previewName" position="744,418" size="512,44" font="Regular;26" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" />
-    <widget name="previewMeta" position="744,462" size="512,28" font="Regular;17" halign="left" valign="center" foregroundColor="#d8b8b8" transparent="1" />
+    <widget name="previewChannelLogo" position="744,414" size="64,48" alphatest="blend" scale="1" />
+    <widget name="previewName" position="818,414" size="438,48" font="Regular;24" halign="left" valign="center" foregroundColor="#ffffff" transparent="1" />
+    <widget name="previewMeta" position="818,462" size="438,28" font="Regular;17" halign="left" valign="center" foregroundColor="#d8b8b8" transparent="1" />
     <widget name="previewEpgNow" position="744,490" size="512,30" font="Regular;18" halign="left" valign="center" foregroundColor="#f0b34a" transparent="1" />
     <widget name="previewEpgNext" position="744,520" size="512,24" font="Regular;15" halign="left" valign="center" foregroundColor="#c9a7a7" transparent="1" />
     <widget name="previewFav" position="744,548" size="512,28" font="Regular;17" halign="left" valign="center" foregroundColor="#f0b34a" transparent="1" />
