@@ -219,21 +219,21 @@ class MultiList(MenuList):
 class LiveList(MenuList):
     """Compact list used by the three-column live browser."""
 
-    def __init__(self, item_height=58):
+    def __init__(self, item_height=48):
         MenuList.__init__(self, [], False, eListboxPythonMultiContent)
         self.l.setItemHeight(item_height)
         self.apply_fonts()
 
     def apply_fonts(self):
-        self.l.setFont(0, font(18))
+        self.l.setFont(0, font(20))
         self.l.setFont(1, font(16))
         # Category and channel names use a noticeably larger face so the
         # three-column browser stays readable from a normal viewing distance.
-        self.l.setFont(2, font(24, True))
-        self.l.setFont(3, font(26, True))
+        self.l.setFont(2, font(26, True))
+        self.l.setFont(3, font(28, True))
         # Counts and channel numbers are secondary information: a slightly
         # smaller face leaves more room for the actual name.
-        self.l.setFont(4, font(14))
+        self.l.setFont(4, font(16))
 
 
 def category_entry(width, height, title, value=None):

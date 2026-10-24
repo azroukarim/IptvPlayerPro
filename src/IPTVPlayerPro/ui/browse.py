@@ -387,9 +387,9 @@ class LiveBrowserScreen(BackendScreen):
         self["midPanel"] = Pixmap()
         self["rightPanel"] = Pixmap()
         self["catHeader"] = Label()
-        self["categories"] = LiveList(58)
+        self["categories"] = LiveList(48)
         self["chHeader"] = Label()
-        self["channels"] = LiveList(58)
+        self["channels"] = LiveList(48)
         self["preview"] = Pixmap()
         # decoder=0 is the main video decoder.  The widget only moves the live
         # video plane into the right-hand preview rectangle; it does not start
@@ -792,7 +792,7 @@ class LiveBrowserScreen(BackendScreen):
         entries = []
         for category in self.categories:
             entries.append(category_entry(
-                292, 58, category.get("name") or u"",
+                292, 48, category.get("name") or u"",
                 value=human_count(category.get("count")),
             ))
         self["categories"].setList(entries)
@@ -960,13 +960,13 @@ class LiveBrowserScreen(BackendScreen):
             if self._icon_start <= index < self._icon_end:
                 icon = self._channel_icon(item)
             entries.append(channel_entry(
-                412, 58, item.get("number") or (self._row_offset + index + 1),
+                412, 48, item.get("number") or (self._row_offset + index + 1),
                 item.get("name") or u"", icon=icon,
                 favorite=favorite,
             ))
         if len(self.browser_items) < self.total:
             entries.append(channel_entry(
-                412, 58, 0, _("Load more ..."),
+                412, 48, 0, _("Load more ..."),
                 icon=pixmap("more.png"),
             ))
         self["channels"].setList(entries)

@@ -67,9 +67,9 @@ LIVE_SKIN = """
     <widget name="rightPanel" position="720,80" size="560,640" alphatest="blend" scale="1" />
 
     <widget name="catHeader" position="18,92" size="264,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="categories" position="4,126" size="292,524" scrollbarMode="showOnDemand" />
+    <widget name="categories" position="4,126" size="292,576" scrollbarMode="showOnDemand" />
     <widget name="chHeader" position="318,92" size="384,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="channels" position="304,126" size="412,524" scrollbarMode="showOnDemand" />
+    <widget name="channels" position="304,126" size="412,576" scrollbarMode="showOnDemand" />
 
     <widget name="preview" position="744,104" size="512,300" alphatest="blend" scale="1" />
     <widget name="previewVideo" position="744,104" size="512,300" backgroundColor="transparent" />
