@@ -246,15 +246,18 @@ def category_entry(width, height, title, value=None):
             backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
         )
     ]
-    value_width = 46 if value else 0
-    text_width = width - value_width - 12 if value else width - 12
+    # value_width must be wide enough for counts like "19,919" at font-16
+    value_width = 62 if value else 0
+    gap = 6
+    text_width = width - value_width - gap - 8 if value else width - 8
     entries.append(MultiContentEntryText(
         pos=(8, 0), size=(text_width, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
         text=title, color=LIVE_TEXT, color_sel=WHITE,
     ))
     if value:
-        val_x = width - value_width - 4
+        # count starts STRICTLY after the text ends
+        val_x = width - value_width - 2
         entries.append(MultiContentEntryText(
             pos=(val_x, 0), size=(value_width, height),
             font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
@@ -275,9 +278,11 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
         )
     ]
     number_text = u"{0}".format(number) if number else u""
-    number_width = 44 if number_text else 0
+    # Wide enough for 3-digit channel numbers at font-16
+    number_width = 52 if number_text else 0
     badge_width = 20 if favorite else 0
-    right_space = number_width + badge_width + 12
+    # Extra gap so the number never overlaps the name
+    right_space = number_width + badge_width + 14
 
     icon_x = 8
     icon_w = 32
@@ -301,7 +306,7 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
             text=u"\u2605", color=LIVE_ACCENT, color_sel=WHITE,
         ))
     if number_text:
-        num_x = width - number_width - 6
+        num_x = width - number_width - 2
         entries.append(MultiContentEntryText(
             pos=(num_x, 0), size=(number_width, height),
             font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
