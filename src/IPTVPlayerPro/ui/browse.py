@@ -1878,6 +1878,13 @@ class GridBrowserScreen(AsyncScreen):
     def activate_item(self, item):
         pass
 
+    def open_child(self, screen_class, *args):
+        self.session.openWithCallback(self.child_closed, screen_class, self.store, self.backend, *args)
+
+    def child_closed(self, result=None):
+        if result == "zapped":
+            self.close("zapped")
+
     def key_red(self):
         if self.focus_area == "grid":
             self.focus_area = "categories"
