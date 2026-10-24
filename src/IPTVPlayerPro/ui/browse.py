@@ -1611,6 +1611,10 @@ class GridBrowserScreen(AsyncScreen):
         self["leftPanel"].instance.setPixmap(pixmap("live_panel_left.png"))
         self["searchPill"].instance.setPixmap(pixmap("live_search.png"))
         self["searchIcon"].instance.setPixmap(pixmap("live_search_icon.png"))
+        try:
+            self["gridFocus"].instance.setPixmap(pixmap("focus_frame.png"))
+        except Exception:
+            pass
         self["gridFocus"].hide()
         for i in range(10):
             self["poster_{0}".format(i)].instance.setPixmap(self.placeholder())
@@ -1678,6 +1682,9 @@ class GridBrowserScreen(AsyncScreen):
         self.browser_items = list(items)
         self.total_backend_items = total
         self.status_text(u"")
+        if items and self.focus_area == "categories":
+            self.focus_area = "grid"
+            self.grid_cursor = 0
         self.render_grid()
 
     def get_visible_items(self):
@@ -1774,11 +1781,12 @@ class GridBrowserScreen(AsyncScreen):
 
             col = self.grid_cursor % 5
             row = self.grid_cursor // 5
-            x = 310 + col * 192 - 3
-            y = 126 + row * 264 - 3
+            x = 310 + col * 192 - 4
+            y = 126 + row * 264 - 4
 
             try:
                 self["gridFocus"].instance.move(ePoint(x, y))
+                self["gridFocus"].instance.setPixmap(pixmap("focus_frame.png"))
                 self["gridFocus"].show()
             except Exception:
                 pass

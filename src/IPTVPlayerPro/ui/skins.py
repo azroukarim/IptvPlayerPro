@@ -160,7 +160,7 @@ GRID_SKIN = """
     <widget name="gridHeader" position="310,88" size="550,32" font="Regular;20" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
     <widget name="gridPage" position="870,88" size="390,32" font="Regular;18" halign="right" valign="center" foregroundColor="#f0b34a" transparent="1" />
 
-    <widget name="gridFocus" position="0,0" size="186,256" backgroundColor="#f0b34a" zPosition="1" />
+    <widget name="gridFocus" position="0,0" size="188,258" alphatest="blend" zPosition="10" />
 
     <!-- Row 0 (slots 0..4) -->
     <eLabel position="310,126" size="180,250" backgroundColor="#180b12" zPosition="2" />
