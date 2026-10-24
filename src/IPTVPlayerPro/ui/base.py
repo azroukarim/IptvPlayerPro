@@ -237,29 +237,38 @@ class LiveList(MenuList):
 
 
 def category_entry(width, height, title, value=None):
-    """A category row with the count pinned to the far right edge without obscuring text."""
+    """A category row with the count pinned to the far right, text strictly before it."""
     title = to_text(title)
     value = to_text(value) if value else u""
+
+    # ── geometry ──────────────────────────────────────────────────────────────
+    # value_width: wide enough for "19,919" (6 chars) at font-16
+    value_width = 68 if value else 0
+    text_end    = width - value_width          # text widget ends HERE
+    text_start  = 8
+    text_width  = text_end - text_start        # strict, no overlap
+
     entries = [
+        # row background
         MultiContentEntryRectangle(
             pos=(0, 1), size=(width, height - 2),
             backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
-        )
+        ),
+        # name text – width is capped so it NEVER reaches the count area
+        MultiContentEntryText(
+            pos=(text_start, 0), size=(text_width, height),
+            font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+            text=title, color=LIVE_TEXT, color_sel=WHITE,
+        ),
     ]
-    # value_width must be wide enough for counts like "19,919" at font-16
-    value_width = 62 if value else 0
-    gap = 6
-    text_width = width - value_width - gap - 8 if value else width - 8
-    entries.append(MultiContentEntryText(
-        pos=(8, 0), size=(text_width, height),
-        font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
-        text=title, color=LIVE_TEXT, color_sel=WHITE,
-    ))
     if value:
-        # count starts STRICTLY after the text ends
-        val_x = width - value_width - 2
+        # opaque background behind the count so any text bleed is hidden
+        entries.append(MultiContentEntryRectangle(
+            pos=(text_end, 0), size=(value_width, height),
+            backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
+        ))
         entries.append(MultiContentEntryText(
-            pos=(val_x, 0), size=(value_width, height),
+            pos=(text_end, 0), size=(value_width - 4, height),
             font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
             text=value, color=LIVE_MUTED, color_sel=WHITE,
         ))
@@ -271,44 +280,51 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
     """A numbered channel row with icon, clean title and number pinned to the far right."""
     title = to_text(title)
     number = safe_int(number)
-    entries = [
-        MultiContentEntryRectangle(
-            pos=(0, 1), size=(width, height - 2),
-            backgroundColor=bg, backgroundColorSelected=selected_bg,
-        )
-    ]
+
     number_text = u"{0}".format(number) if number else u""
-    # Wide enough for 3-digit channel numbers at font-16
-    number_width = 52 if number_text else 0
-    badge_width = 20 if favorite else 0
-    # Extra gap so the number never overlaps the name
-    right_space = number_width + badge_width + 14
+    badge_width  = 20 if favorite else 0
+    # number_width: wide enough for 3-digit numbers at font-16
+    number_width = 54 if number_text else 0
+    right_total  = number_width + badge_width   # zone reserved on the right
 
     icon_x = 8
     icon_w = 32
+    text_x = icon_x + icon_w + 8               # = 48
+    text_w = width - text_x - right_total       # text ends before the number zone
+
+    entries = [
+        # row background
+        MultiContentEntryRectangle(
+            pos=(0, 1), size=(width, height - 2),
+            backgroundColor=bg, backgroundColorSelected=selected_bg,
+        ),
+        # channel name – strictly bounded
+        MultiContentEntryText(
+            pos=(text_x, 0), size=(text_w, height),
+            font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+            text=title, color=LIVE_TEXT, color_sel=WHITE,
+        ),
+    ]
     if icon is not None:
         entries.append(MultiContentEntryPixmapAlphaTest(
             pos=(icon_x, (height - 32) // 2), size=(icon_w, 32), png=icon,
         ))
-    text_x = icon_x + icon_w + 8
-    text_w = width - text_x - right_space
-
-    entries.append(MultiContentEntryText(
-        pos=(text_x, 0), size=(text_w, height),
-        font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
-        text=title, color=LIVE_TEXT, color_sel=WHITE,
-    ))
     if favorite:
-        fav_x = width - number_width - badge_width - 6
+        fav_x = width - right_total
         entries.append(MultiContentEntryText(
             pos=(fav_x, 0), size=(badge_width, height),
             font=2, flags=RT_HALIGN_CENTER | RT_VALIGN_CENTER,
             text=u"\u2605", color=LIVE_ACCENT, color_sel=WHITE,
         ))
     if number_text:
-        num_x = width - number_width - 2
-        entries.append(MultiContentEntryText(
+        num_x = width - number_width
+        # opaque background so any text bleed from left is hidden
+        entries.append(MultiContentEntryRectangle(
             pos=(num_x, 0), size=(number_width, height),
+            backgroundColor=bg, backgroundColorSelected=selected_bg,
+        ))
+        entries.append(MultiContentEntryText(
+            pos=(num_x, 0), size=(number_width - 4, height),
             font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
             text=number_text, color=LIVE_MUTED, color_sel=WHITE,
         ))

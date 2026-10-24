@@ -51,7 +51,7 @@ MAIN_SKIN = """
 """
 
 LIVE_SKIN = """
-<screen name="IPTVProLive" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder" backgroundColor="#ff000000">
+<screen name="IPTVProLive" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder" backgroundColor="#00000000">
     <widget name="bg" position="0,0" size="1280,720" alphatest="blend" scale="1" />
     <widget name="header" position="0,0" size="1280,80" alphatest="blend" scale="1" />
     <widget name="logo" position="20,12" size="120,44" alphatest="blend" scale="1" />
@@ -67,9 +67,9 @@ LIVE_SKIN = """
     <widget name="rightPanel" position="740,80" size="540,640" alphatest="blend" scale="1" />
 
     <widget name="catHeader" position="14,92" size="290,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="categories" position="4,126" size="322,576" scrollbarMode="showNever" />
+    <widget name="categories" position="4,126" size="322,576" scrollbarMode="showNever" backgroundColor="#cc1a0810" />
     <widget name="chHeader" position="344,92" size="380,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="channels" position="334,126" size="402,576" scrollbarMode="showNever" />
+    <widget name="channels" position="334,126" size="402,576" scrollbarMode="showNever" backgroundColor="#cc1a0810" />
 
     <widget name="preview" position="754,104" size="512,300" alphatest="blend" scale="1" />
     <widget name="previewVideo" position="754,104" size="512,300" backgroundColor="transparent" />
