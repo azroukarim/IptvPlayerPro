@@ -237,12 +237,7 @@ class LiveList(MenuList):
 
 
 def category_entry(width, height, title, value=None):
-    """A category row with the count pinned to the far right edge.
-
-    The name is allowed to use the whole row and the count is drawn on top of
-    a small background mask.  This gives long Arabic/English category names
-    more visible space instead of clipping them early next to the count.
-    """
+    """A category row with the count pinned to the far right edge without obscuring text."""
     title = to_text(title)
     value = to_text(value) if value else u""
     entries = [
@@ -251,21 +246,17 @@ def category_entry(width, height, title, value=None):
             backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
         )
     ]
-    value_width = 52 if value else 0
+    value_width = 46 if value else 0
+    text_width = width - value_width - 16 if value else width - 16
     entries.append(MultiContentEntryText(
-        pos=(12, 0), size=(width - 12, height),
+        pos=(10, 0), size=(text_width, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
         text=title, color=LIVE_TEXT, color_sel=WHITE,
     ))
     if value:
-        mask_x = width - value_width - 4
-        entries.append(MultiContentEntryRectangle(
-            pos=(mask_x, 1), size=(width - mask_x, height - 2),
-            backgroundColor=LIVE_ROW_BG,
-            backgroundColorSelected=LIVE_ROW_SEL,
-        ))
+        val_x = width - value_width - 6
         entries.append(MultiContentEntryText(
-            pos=(mask_x, 0), size=(value_width, height),
+            pos=(val_x, 0), size=(value_width, height),
             font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
             text=value, color=LIVE_MUTED, color_sel=WHITE,
         ))
@@ -274,7 +265,7 @@ def category_entry(width, height, title, value=None):
 
 def channel_entry(width, height, number, title, icon=None, favorite=False,
                   bg=LIVE_ROW_BG, selected_bg=LIVE_ROW_SEL):
-    """A numbered channel row with a logo and an optional favourite star."""
+    """A numbered channel row with icon, clean title and number pinned to the far right."""
     title = to_text(title)
     number = safe_int(number)
     entries = [
@@ -283,38 +274,36 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
             backgroundColor=bg, backgroundColorSelected=selected_bg,
         )
     ]
-    number_text = u"{0:02d}".format(number) if number else u""
-    number_width = 36 if number_text else 0
-    icon_x = 10
+    number_text = u"{0}".format(number) if number else u""
+    number_width = 44 if number_text else 0
+    badge_width = 20 if favorite else 0
+    right_space = number_width + badge_width + 12
+
+    icon_x = 8
+    icon_w = 32
     if icon is not None:
         entries.append(MultiContentEntryPixmapAlphaTest(
-            pos=(icon_x, (height - 32) // 2), size=(32, 32), png=icon,
+            pos=(icon_x, (height - 32) // 2), size=(icon_w, 32), png=icon,
         ))
-    text_x = icon_x + 40
-    badge_width = 24 if favorite else 0
+    text_x = icon_x + icon_w + 8
+    text_w = width - text_x - right_space
+
     entries.append(MultiContentEntryText(
-        pos=(text_x, 0), size=(width - text_x, height),
+        pos=(text_x, 0), size=(text_w, height),
         font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
         text=title, color=LIVE_TEXT, color_sel=WHITE,
     ))
-    if number_text or favorite:
-        mask_x = width - number_width - badge_width - 6
-        if mask_x < text_x:
-            mask_x = text_x
-        entries.append(MultiContentEntryRectangle(
-            pos=(mask_x, 1), size=(width - mask_x, height - 2),
-            backgroundColor=bg, backgroundColorSelected=selected_bg,
-        ))
     if favorite:
+        fav_x = width - number_width - badge_width - 6
         entries.append(MultiContentEntryText(
-            pos=(width - number_width - badge_width - 4, 0),
-            size=(badge_width, height),
+            pos=(fav_x, 0), size=(badge_width, height),
             font=2, flags=RT_HALIGN_CENTER | RT_VALIGN_CENTER,
             text=u"\u2605", color=LIVE_ACCENT, color_sel=WHITE,
         ))
     if number_text:
+        num_x = width - number_width - 6
         entries.append(MultiContentEntryText(
-            pos=(width - number_width - 4, 0), size=(number_width, height),
+            pos=(num_x, 0), size=(number_width, height),
             font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
             text=number_text, color=LIVE_MUTED, color_sel=WHITE,
         ))
