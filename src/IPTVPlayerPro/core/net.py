@@ -60,8 +60,8 @@ def _ssl_context():
 
 
 class Http(object):
-    def __init__(self, timeout=20, user_agent=None, retries=2):
-        self.timeout = timeout or 20
+    def __init__(self, timeout=60, user_agent=None, retries=4):
+        self.timeout = timeout or 60
         self.user_agent = user_agent or DEFAULT_UA
         self.retries = retries
         self.context = _ssl_context()
