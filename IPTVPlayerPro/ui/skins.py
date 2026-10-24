@@ -51,9 +51,10 @@ MAIN_SKIN = """
 """
 
 LIVE_SKIN = """
-<screen name="IPTVProLive" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder" backgroundColor="#00000000">
-    <widget name="bg" position="0,0" size="1280,720" alphatest="blend" scale="1" />
-    <widget name="header" position="0,0" size="1280,80" alphatest="blend" scale="1" />
+<screen name="IPTVProLive" position="0,0" size="1280,720" resolution="1280,720" title="IPTV Player Pro" flags="wfNoBorder" backgroundColor="#000000">
+    <eLabel position="0,0" size="1280,720" backgroundColor="#0e0508" zPosition="-10" />
+    <widget name="bg" position="0,0" size="1280,720" scale="1" />
+    <widget name="header" position="0,0" size="1280,80" scale="1" />
     <widget name="logo" position="20,12" size="120,44" alphatest="blend" scale="1" />
     <widget name="navLive" position="158,18" size="132,42" font="Regular;20" halign="center" valign="center" foregroundColor="#ff6b6b" transparent="1" />
     <widget name="searchPill" position="750,18" size="200,44" alphatest="blend" scale="1" />
@@ -62,16 +63,16 @@ LIVE_SKIN = """
     <widget name="status" position="966,14" size="294,28" font="Regular;16" halign="right" valign="center" foregroundColor="#f0dada" transparent="1" />
     <widget name="source" position="966,42" size="294,22" font="Regular;13" halign="right" valign="center" foregroundColor="#b98a8a" transparent="1" />
 
-    <widget name="leftPanel" position="0,80" size="330,640" alphatest="blend" scale="1" />
-    <widget name="midPanel" position="330,80" size="410,640" alphatest="blend" scale="1" />
-    <widget name="rightPanel" position="740,80" size="540,640" alphatest="blend" scale="1" />
+    <widget name="leftPanel" position="0,80" size="300,640" scale="1" />
+    <widget name="midPanel" position="300,80" size="440,640" scale="1" />
+    <widget name="rightPanel" position="740,80" size="540,640" scale="1" />
 
-    <widget name="catHeader" position="14,92" size="290,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="categories" position="4,126" size="322,576" scrollbarMode="showNever" backgroundColor="#cc1a0810" />
-    <widget name="chHeader" position="344,92" size="380,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
-    <widget name="channels" position="334,126" size="402,576" scrollbarMode="showNever" backgroundColor="#cc1a0810" />
+    <widget name="catHeader" position="14,92" size="270,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
+    <widget name="categories" position="4,126" size="292,576" scrollbarMode="showNever" backgroundColor="#16070b" />
+    <widget name="chHeader" position="312,92" size="416,32" font="Regular;22" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
+    <widget name="channels" position="308,126" size="424,576" scrollbarMode="showNever" backgroundColor="#140609" />
 
-    <widget name="preview" position="754,104" size="512,300" alphatest="blend" scale="1" />
+    <widget name="preview" position="754,104" size="512,300" scale="1" />
     <widget name="previewVideo" position="754,104" size="512,300" backgroundColor="transparent" />
     <widget name="previewKind" position="772,112" size="250,24" font="Regular;14" halign="left" valign="center" foregroundColor="#b98a8a" transparent="1" />
     <widget name="previewLogo" position="894,142" size="216,216" alphatest="blend" scale="1" />

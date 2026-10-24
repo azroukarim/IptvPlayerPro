@@ -227,12 +227,10 @@ class LiveList(MenuList):
     def apply_fonts(self):
         self.l.setFont(0, font(20))
         self.l.setFont(1, font(16))
-        # Category and channel names use a noticeably larger face so the
-        # three-column browser stays readable from a normal viewing distance.
-        self.l.setFont(2, font(26, True))
-        self.l.setFont(3, font(28, True))
-        # Counts and channel numbers are secondary information: a slightly
-        # smaller face leaves more room for the actual name.
+        # Category and channel names: 22 bold gives enough width for long names
+        # to fit without clipping Arabic prefixes
+        self.l.setFont(2, font(22, True))
+        self.l.setFont(3, font(24, True))
         self.l.setFont(4, font(16))
 
 
@@ -245,7 +243,7 @@ def category_entry(width, height, title, value=None):
             backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
         ),
         MultiContentEntryText(
-            pos=(8, 0), size=(width - 10, height),
+            pos=(8, 0), size=(width - 16, height),
             font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
             text=title, color=LIVE_TEXT, color_sel=WHITE,
         ),
@@ -257,10 +255,15 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
     """Channel row – icon + full-width name, no number on the right."""
     title = to_text(title)
 
-    icon_x = 8
-    icon_w = 32
-    text_x = icon_x + icon_w + 8   # = 48
-    text_w = width - text_x - 8    # fill remaining width
+    fav_w = 26 if favorite else 0
+    if icon is not None:
+        icon_x = 6
+        icon_w = 32
+        text_x = icon_x + icon_w + 6
+    else:
+        text_x = 8
+
+    text_w = width - text_x - fav_w - 6
 
     entries = [
         MultiContentEntryRectangle(
@@ -279,7 +282,7 @@ def channel_entry(width, height, number, title, icon=None, favorite=False,
         ))
     if favorite:
         entries.append(MultiContentEntryText(
-            pos=(width - 30, 0), size=(26, height),
+            pos=(width - 28, 0), size=(24, height),
             font=4, flags=RT_HALIGN_CENTER | RT_VALIGN_CENTER,
             text=u"\u2605", color=LIVE_ACCENT, color_sel=WHITE,
         ))
