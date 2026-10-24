@@ -250,6 +250,32 @@ def category_entry(width, height, title, value=None):
     ]
 
 
+def vod_category_entry(width, height, title, value=None):
+    """Sidebar category row for Movies/Series with count on the right."""
+    title = to_text(title)
+    value = to_text(value) if value else u""
+    entries = [
+        MultiContentEntryRectangle(
+            pos=(0, 1), size=(width, height - 2),
+            backgroundColor=LIVE_ROW_BG, backgroundColorSelected=LIVE_ROW_SEL,
+        )
+    ]
+    val_w = 60 if value else 0
+    text_w = width - val_w - 14 if value else width - 12
+    entries.append(MultiContentEntryText(
+        pos=(8, 0), size=(text_w, height),
+        font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+        text=title, color=LIVE_TEXT, color_sel=WHITE,
+    ))
+    if value:
+        entries.append(MultiContentEntryText(
+            pos=(width - val_w - 4, 0), size=(val_w, height),
+            font=4, flags=RT_HALIGN_RIGHT | RT_VALIGN_CENTER,
+            text=value, color=LIVE_MUTED, color_sel=WHITE,
+        ))
+    return entries
+
+
 def channel_entry(width, height, number, title, icon=None, favorite=False,
                   bg=LIVE_ROW_BG, selected_bg=LIVE_ROW_SEL):
     """Channel row – icon + full-width name, no number on the right."""

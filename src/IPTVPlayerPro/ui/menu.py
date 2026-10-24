@@ -431,11 +431,11 @@ class MainMenu(AsyncScreen):
             from .browse import LiveBrowserScreen
             screen = LiveBrowserScreen
         elif key == "movies":
-            from .browse import VodCategoriesScreen
-            screen = VodCategoriesScreen
+            from .browse import VodGridScreen
+            screen = VodGridScreen
         else:
-            from .browse import SeriesCategoriesScreen
-            screen = SeriesCategoriesScreen
+            from .browse import SeriesGridScreen
+            screen = SeriesGridScreen
         self.session.openWithCallback(self.child_closed, screen, self.store, self.backend)
 
     # ------------------------------------------------------------- actions

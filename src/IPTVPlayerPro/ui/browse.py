@@ -6,7 +6,7 @@ from __future__ import absolute_import
 import os
 import time
 
-from enigma import eRect, eTimer
+from enigma import ePoint, eRect, eSize, eTimer
 
 from Components.ActionMap import HelpableActionMap
 from Components.Label import Label
@@ -19,11 +19,11 @@ from ..core.epg import clock_text
 from ..core.i18n import _
 from ..core.util import human_count, safe_int, to_text
 from .base import (AsyncScreen, ListScreen, LiveList, category_entry,
-                   channel_entry, download_logo, font, info_box, pixmap, play_url, row_entry,
-                   skin_factor)
+                   channel_entry, download_logo, download_poster, font, info_box,
+                   pixmap, play_url, row_entry, skin_factor, vod_category_entry)
 from .info import InfoScreen
 from .player import LivePlayerScreen
-from .skins import LIVE_SKIN
+from .skins import GRID_SKIN, LIVE_SKIN
 
 
 # Channel logos are decoded at their original size.  Some providers ship very
@@ -1531,6 +1531,452 @@ class LiveBrowserScreen(BackendScreen):
         self.load_channels()
         self.set_focus("channels")
         self.update_preview()
+
+
+class GridBrowserScreen(AsyncScreen):
+    """Modern VOD & Series grid browser with category sidebar and 5x2 poster cards."""
+    skin = GRID_SKIN
+    section = "movies"
+
+    def __init__(self, session, store, backend, title=u""):
+        AsyncScreen.__init__(self, session)
+        self.skinName = "IPTVProGrid"
+        self.store = store
+        self.backend = backend
+        self.title_text = title
+
+        # Panels and background
+        self["bg"] = Pixmap()
+        self["header"] = Pixmap()
+        self["logo"] = Pixmap()
+        self["leftPanel"] = Pixmap()
+        self["navTitle"] = Label(self.title_text)
+        self["searchPill"] = Pixmap()
+        self["searchIcon"] = Pixmap()
+        self["searchText"] = Label(_("Search"))
+        self["status"] = Label()
+        self["source"] = Label(source_label(store.active_source()))
+
+        # Categories list on the left
+        self["catHeader"] = Label(_("Categories"))
+        self["categories"] = LiveList(item_height=48)
+
+        # Right grid area
+        self["gridHeader"] = Label()
+        self["gridPage"] = Label()
+        self["gridFocus"] = Pixmap()
+        self["hint"] = Label(_("OK open  •  LEFT categories  •  GREEN search  •  YELLOW favorite  •  RED back"))
+
+        for i in range(10):
+            self["poster_{0}".format(i)] = Pixmap()
+            self["rating_{0}".format(i)] = Label()
+            self["title_{0}".format(i)] = Label()
+
+        self.focus_area = "categories"
+        self.categories_list = []
+        self.active_category_id = "all"
+        self.active_category_name = _("All")
+        self.category_index = 0
+        self.browser_items = []
+        self.page = 1
+        self.total_backend_items = 0
+        self.backend_page = 1
+        self.grid_cursor = 0
+        self.query = u""
+        self.started = False
+
+        self["actions"] = HelpableActionMap(self, [
+            "NavigationActions", "OkCancelActions", "ColorActions",
+        ], {
+            "left": self.key_left,
+            "right": self.key_right,
+            "up": self.key_up,
+            "down": self.key_down,
+            "ok": self.key_ok,
+            "cancel": self.key_red,
+            "red": self.key_red,
+            "green": self.key_green,
+            "yellow": self.key_yellow,
+            "blue": self.key_blue,
+            "pageUp": self.key_page_up,
+            "pageDown": self.key_page_down,
+        }, -1)
+
+        self.onLayoutFinish.append(self._layout_ready)
+
+    def _layout_ready(self):
+        self["bg"].instance.setPixmap(pixmap("live_bg.png"))
+        self["header"].instance.setPixmap(pixmap("live_header.png"))
+        self["logo"].instance.setPixmap(pixmap("logo_small.png"))
+        self["leftPanel"].instance.setPixmap(pixmap("live_panel_left.png"))
+        self["searchPill"].instance.setPixmap(pixmap("live_search.png"))
+        self["searchIcon"].instance.setPixmap(pixmap("live_search_icon.png"))
+        self["gridFocus"].hide()
+        for i in range(10):
+            self["poster_{0}".format(i)].instance.setPixmap(self.placeholder())
+            self["rating_{0}".format(i)].setText(u"")
+            self["title_{0}".format(i)].setText(u"")
+        self.start()
+
+    def start(self):
+        if not self.started:
+            self.started = True
+            self.status_text(_("Loading categories ..."))
+            self.run_async(self._load_categories_worker, self._categories_loaded, self._load_failed)
+
+    def status_text(self, text):
+        self["status"].setText(to_text(text))
+
+    def _load_failed(self, error):
+        self.status_text(_("Failed to load"))
+
+    def placeholder(self):
+        return pixmap("movie.png")
+
+    def _load_categories_worker(self):
+        return []
+
+    def _categories_loaded(self, categories):
+        cats = []
+        total_count = sum(safe_int(c.get("count")) for c in categories if c.get("count"))
+        cats.append({"id": "all", "name": _("All"), "count": total_count if total_count else None})
+        cats.extend(categories)
+        self.categories_list = cats
+
+        entries = []
+        for cat in cats:
+            name = cat.get("name") or u""
+            cnt = human_count(cat.get("count")) if cat.get("count") else None
+            entries.append(vod_category_entry(284, 48, name, value=cnt))
+        self["categories"].setList(entries)
+
+        if cats:
+            self.category_index = 0
+            self.active_category_id = cats[0].get("id") or "all"
+            self.active_category_name = cats[0].get("name") or _("All")
+            self["categories"].setCurrentIndex(0)
+            self.load_category_items()
+
+    def load_category_items(self):
+        self.browser_items = []
+        self.page = 1
+        self.backend_page = 1
+        self.total_backend_items = 0
+        self.grid_cursor = 0
+        self.status_text(_("Loading ..."))
+        self.run_async(
+            lambda: self.fetch_backend_items(self.active_category_id, self.query, 1),
+            self._items_loaded,
+            self._load_failed
+        )
+
+    def fetch_backend_items(self, category_id, query, page):
+        return [], 0
+
+    def _items_loaded(self, result):
+        items, total = result
+        self.browser_items = list(items)
+        self.total_backend_items = total
+        self.status_text(u"")
+        self.render_grid()
+
+    def get_visible_items(self):
+        query = self.query.lower()
+        if query:
+            return [it for it in self.browser_items if query in to_text(it.get("name") or "").lower()]
+        return self.browser_items
+
+    def get_current_page_items(self):
+        visible = self.get_visible_items()
+        start = (self.page - 1) * 10
+        return visible[start : start + 10]
+
+    def render_grid(self):
+        visible = self.get_visible_items()
+        total_visible = len(visible)
+        total_pages = max(1, (total_visible + 9) // 10)
+        if self.page > total_pages:
+            self.page = total_pages
+
+        start = (self.page - 1) * 10
+        page_items = visible[start : start + 10]
+
+        cat_count = self.total_backend_items or total_visible
+        self["gridHeader"].setText(u"{0} ({1})".format(self.active_category_name, human_count(cat_count)))
+        self["gridPage"].setText(u"Page {0} / {1}  ({2})".format(self.page, total_pages, human_count(total_visible)))
+
+        for i in range(10):
+            if i < len(page_items):
+                item = page_items[i]
+                title = to_text(item.get("name") or u"")
+                self["title_{0}".format(i)].setText(title)
+                self["title_{0}".format(i)].show()
+
+                rating = item.get("rating")
+                if rating:
+                    self["rating_{0}".format(i)].setText(u"★ {0}".format(rating))
+                    self["rating_{0}".format(i)].show()
+                else:
+                    self["rating_{0}".format(i)].hide()
+
+                self._update_poster_slot(i, item)
+                self["poster_{0}".format(i)].show()
+            else:
+                self["title_{0}".format(i)].setText(u"")
+                self["rating_{0}".format(i)].hide()
+                self["poster_{0}".format(i)].hide()
+
+        self.update_focus()
+
+    def _update_poster_slot(self, slot, item):
+        url = item.get("poster") or item.get("logo") or item.get("stream_icon") or item.get("cover")
+        if not url:
+            self["poster_{0}".format(slot)].instance.setPixmap(self.placeholder())
+            return
+
+        local_path = self.store.logo_file(url, kind="poster")
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 128:
+            ptr = pixmap(local_path)
+            if ptr:
+                self["poster_{0}".format(slot)].instance.setPixmap(ptr)
+                return
+
+        self["poster_{0}".format(slot)].instance.setPixmap(self.placeholder())
+
+        def _dl():
+            return download_poster(url, self.store)
+
+        def _on_done(path):
+            if not self._alive:
+                return
+            if path and os.path.exists(path) and os.path.getsize(path) > 128:
+                ptr = pixmap(path)
+                curr_page = self.get_current_page_items()
+                if ptr and slot < len(curr_page):
+                    curr = curr_page[slot]
+                    curr_url = curr.get("poster") or curr.get("logo") or curr.get("stream_icon") or curr.get("cover")
+                    if curr_url == url:
+                        self["poster_{0}".format(slot)].instance.setPixmap(ptr)
+
+        try:
+            self.run_async(_dl, _on_done, lambda e: None)
+        except Exception:
+            pass
+
+    def update_focus(self):
+        if self.focus_area == "grid":
+            page_items = self.get_current_page_items()
+            if not page_items:
+                self["gridFocus"].hide()
+                return
+            if self.grid_cursor >= len(page_items):
+                self.grid_cursor = max(0, len(page_items) - 1)
+
+            col = self.grid_cursor % 5
+            row = self.grid_cursor // 5
+            x = 310 + col * 192 - 3
+            y = 126 + row * 264 - 3
+
+            try:
+                self["gridFocus"].instance.move(ePoint(x, y))
+                self["gridFocus"].show()
+            except Exception:
+                pass
+        else:
+            self["gridFocus"].hide()
+
+    def key_left(self):
+        if self.focus_area == "grid":
+            col = self.grid_cursor % 5
+            if col > 0:
+                self.grid_cursor -= 1
+                self.update_focus()
+            else:
+                self.focus_area = "categories"
+                self.update_focus()
+
+    def key_right(self):
+        if self.focus_area == "categories":
+            if self.get_current_page_items():
+                self.focus_area = "grid"
+                self.grid_cursor = 0
+                self.update_focus()
+        else:
+            col = self.grid_cursor % 5
+            page_items = self.get_current_page_items()
+            if col < 4 and (self.grid_cursor + 1) < len(page_items):
+                self.grid_cursor += 1
+                self.update_focus()
+            elif self.has_next_page():
+                self.key_page_down()
+                self.grid_cursor = (self.grid_cursor // 5) * 5
+                self.update_focus()
+
+    def key_up(self):
+        if self.focus_area == "categories":
+            idx = self["categories"].getSelectedIndex()
+            if idx > 0:
+                self["categories"].setCurrentIndex(idx - 1)
+                self._category_changed(idx - 1)
+        else:
+            row = self.grid_cursor // 5
+            if row == 1:
+                self.grid_cursor -= 5
+                self.update_focus()
+            elif self.page > 1:
+                col = self.grid_cursor % 5
+                self.key_page_up()
+                prev_len = len(self.get_current_page_items())
+                self.grid_cursor = min(prev_len - 1, 5 + col)
+                self.update_focus()
+
+    def key_down(self):
+        if self.focus_area == "categories":
+            idx = self["categories"].getSelectedIndex()
+            if idx + 1 < len(self.categories_list):
+                self["categories"].setCurrentIndex(idx + 1)
+                self._category_changed(idx + 1)
+        else:
+            row = self.grid_cursor // 5
+            page_items = self.get_current_page_items()
+            if row == 0 and (self.grid_cursor + 5) < len(page_items):
+                self.grid_cursor += 5
+                self.update_focus()
+            elif self.has_next_page():
+                col = self.grid_cursor % 5
+                self.key_page_down()
+                next_len = len(self.get_current_page_items())
+                self.grid_cursor = min(next_len - 1, col)
+                self.update_focus()
+
+    def _category_changed(self, idx):
+        self.category_index = idx
+        cat = self.categories_list[idx]
+        self.active_category_id = cat.get("id") or "all"
+        self.active_category_name = cat.get("name") or _("All")
+        self.load_category_items()
+
+    def key_ok(self):
+        if self.focus_area == "categories":
+            self.focus_area = "grid"
+            self.grid_cursor = 0
+            self.update_focus()
+        else:
+            page_items = self.get_current_page_items()
+            if self.grid_cursor < len(page_items):
+                item = page_items[self.grid_cursor]
+                self.activate_item(item)
+
+    def activate_item(self, item):
+        pass
+
+    def key_red(self):
+        if self.focus_area == "grid":
+            self.focus_area = "categories"
+            self.update_focus()
+        else:
+            self.close()
+
+    def key_green(self):
+        self.session.openWithCallback(self._search_done, VirtualKeyBoard,
+                                      title=_("Search"), text=self.query)
+
+    def _search_done(self, text=None):
+        if text is not None:
+            self.query = text.strip()
+            self["searchText"].setText(self.query if self.query else _("Search"))
+            self.load_category_items()
+
+    def key_yellow(self):
+        page_items = self.get_current_page_items()
+        if self.grid_cursor < len(page_items):
+            item = page_items[self.grid_cursor]
+            try:
+                self.backend.toggle_favorite(item)
+            except Exception:
+                pass
+
+    def key_blue(self):
+        self.query = u""
+        self["searchText"].setText(_("Search"))
+        self.load_category_items()
+
+    def key_page_up(self):
+        if self.page > 1:
+            self.page -= 1
+            self.render_grid()
+
+    def key_page_down(self):
+        visible = self.get_visible_items()
+        total_visible = len(visible)
+        total_pages = max(1, (total_visible + 9) // 10)
+        if self.page < total_pages:
+            self.page += 1
+            self.render_grid()
+        elif len(self.browser_items) < self.total_backend_items:
+            self.load_more_backend()
+
+    def has_next_page(self):
+        visible = self.get_visible_items()
+        total_visible = len(visible)
+        total_pages = max(1, (total_visible + 9) // 10)
+        return self.page < total_pages or len(self.browser_items) < self.total_backend_items
+
+    def load_more_backend(self):
+        self.backend_page += 1
+        self.status_text(_("Loading more ..."))
+        self.run_async(
+            lambda: self.fetch_backend_items(self.active_category_id, self.query, self.backend_page),
+            self._more_backend_loaded,
+            self._load_failed
+        )
+
+    def _more_backend_loaded(self, result):
+        items, total = result
+        self.browser_items.extend(items)
+        self.total_backend_items = total
+        self.status_text(u"")
+        if self.page * 10 < len(self.browser_items):
+            self.page += 1
+        self.render_grid()
+
+
+class VodGridScreen(GridBrowserScreen):
+    section = "movies"
+
+    def __init__(self, session, store, backend):
+        GridBrowserScreen.__init__(self, session, store, backend, title=_("Movies"))
+
+    def placeholder(self):
+        return pixmap("movie.png")
+
+    def _load_categories_worker(self):
+        return self.backend.vod_categories()
+
+    def fetch_backend_items(self, category_id, query, page):
+        return self.backend.vod_items(category_id, query, page)
+
+    def activate_item(self, item):
+        self.open_child(InfoScreen, item)
+
+
+class SeriesGridScreen(GridBrowserScreen):
+    section = "series"
+
+    def __init__(self, session, store, backend):
+        GridBrowserScreen.__init__(self, session, store, backend, title=_("Series"))
+
+    def placeholder(self):
+        return pixmap("series_card.png")
+
+    def _load_categories_worker(self):
+        return self.backend.series_categories()
+
+    def fetch_backend_items(self, category_id, query, page):
+        return self.backend.series_items(category_id, query, page)
+
+    def activate_item(self, item):
+        self.open_child(SeasonsScreen, item)
 
 
 class VodCategoriesScreen(BackendScreen):
