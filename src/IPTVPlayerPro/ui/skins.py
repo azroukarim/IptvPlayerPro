@@ -160,64 +160,64 @@ GRID_SKIN = """
     <widget name="gridHeader" position="305,88" size="550,32" font="Regular;20" halign="left" valign="center" foregroundColor="#f0dada" transparent="1" />
     <widget name="gridPage" position="865,88" size="400,32" font="Regular;18" halign="right" valign="center" foregroundColor="#f0b34a" transparent="1" />
 
-    <widget name="gridFocus" position="0,0" size="164,224" alphatest="blend" zPosition="-1" />
+    <widget name="gridFocus" position="0,0" size="176,240" alphatest="blend" zPosition="-1" />
 
     <eLabel position="305,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_0" position="303,122" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_0" position="303,122" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_0" position="305,124" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_0" position="418,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_0" position="305,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
     <eLabel position="498,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_1" position="496,122" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_1" position="496,122" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_1" position="498,124" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_1" position="611,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_1" position="498,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
     <eLabel position="691,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_2" position="689,122" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_2" position="689,122" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_2" position="691,124" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_2" position="804,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_2" position="691,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
     <eLabel position="884,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_3" position="882,122" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_3" position="882,122" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_3" position="884,124" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_3" position="997,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_3" position="884,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
     <eLabel position="1077,124" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_4" position="1075,122" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_4" position="1075,122" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_4" position="1077,124" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_4" position="1190,338" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_4" position="1077,352" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
     <eLabel position="305,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_5" position="303,368" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_5" position="303,368" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_5" position="305,370" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_5" position="418,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_5" position="305,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
     <eLabel position="498,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_6" position="496,368" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_6" position="496,368" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_6" position="498,370" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_6" position="611,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_6" position="498,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
     <eLabel position="691,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_7" position="689,368" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_7" position="689,368" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_7" position="691,370" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_7" position="804,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_7" position="691,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
     <eLabel position="884,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_8" position="882,368" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_8" position="882,368" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_8" position="884,370" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_8" position="997,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_8" position="884,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
 
     <eLabel position="1077,370" size="160,240" backgroundColor="#180b12" zPosition="2" />
-    <widget name="focus_9" position="1075,368" size="164,224" alphatest="blend" scale="1" zPosition="10" />
+    <widget name="focus_9" position="1075,368" size="176,240" alphatest="blend" scale="1" zPosition="10" />
     <widget name="poster_9" position="1077,370" size="160,220" scale="1" zPosition="3" />
     <widget name="rating_9" position="1190,584" size="46,22" font="Regular;13" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#0288d1" zPosition="4" />
     <widget name="title_9" position="1077,598" size="160,22" font="Regular;14" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="4" />
