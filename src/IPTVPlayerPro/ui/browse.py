@@ -1569,11 +1569,13 @@ class GridBrowserScreen(AsyncScreen):
         self["hint"] = Label(_("OK open  •  LEFT categories  •  GREEN search  •  YELLOW favorite  •  RED back"))
 
         for i in range(10):
+            self["focus_{0}".format(i)] = Pixmap()
             self["poster_{0}".format(i)] = Pixmap()
             self["rating_{0}".format(i)] = Label()
             self["title_{0}".format(i)] = Label()
 
         self.focus_area = "categories"
+        self._initial_load = True
         self.categories_list = []
         self.active_category_id = "all"
         self.active_category_name = _("All")
@@ -1617,7 +1619,14 @@ class GridBrowserScreen(AsyncScreen):
         except Exception:
             pass
         self["gridFocus"].hide()
+        frame = pixmap("focus_frame.png")
         for i in range(10):
+            try:
+                if frame:
+                    self["focus_{0}".format(i)].instance.setPixmap(frame)
+            except Exception:
+                pass
+            self["focus_{0}".format(i)].hide()
             self["poster_{0}".format(i)].instance.setPixmap(self.placeholder())
             self["rating_{0}".format(i)].setText(u"")
             self["title_{0}".format(i)].setText(u"")
@@ -1683,7 +1692,8 @@ class GridBrowserScreen(AsyncScreen):
         self.browser_items = list(items)
         self.total_backend_items = total
         self.status_text(u"")
-        if items and self.focus_area == "categories":
+        if self._initial_load and items:
+            self._initial_load = False
             self.focus_area = "grid"
             self.grid_cursor = 0
         self.render_grid()
@@ -1772,27 +1782,38 @@ class GridBrowserScreen(AsyncScreen):
             pass
 
     def update_focus(self):
-        if self.focus_area == "grid":
-            page_items = self.get_current_page_items()
-            if not page_items:
-                self["gridFocus"].hide()
-                return
-            if self.grid_cursor >= len(page_items):
-                self.grid_cursor = max(0, len(page_items) - 1)
+        is_grid = (self.focus_area == "grid")
+        try:
+            self["categories"].selectionEnabled(not is_grid)
+        except Exception:
+            pass
 
-            col = self.grid_cursor % 5
-            row = self.grid_cursor // 5
-            x = 305 + col * 193 - 2
-            y = 124 + row * 246 - 2
+        page_items = self.get_current_page_items()
+        if not page_items:
+            for i in range(10):
+                self["focus_{0}".format(i)].hide()
+            self["gridFocus"].hide()
+            return
 
+        if self.grid_cursor >= len(page_items):
+            self.grid_cursor = max(0, len(page_items) - 1)
+
+        for i in range(10):
             try:
-                self["gridFocus"].instance.move(ePoint(x, y))
-                self["gridFocus"].instance.setPixmap(pixmap("focus_frame.png"))
-                self["gridFocus"].show()
+                if is_grid and i == self.grid_cursor and i < len(page_items):
+                    self["focus_{0}".format(i)].show()
+                else:
+                    self["focus_{0}".format(i)].hide()
             except Exception:
                 pass
+
+        if is_grid and self.grid_cursor < len(page_items):
+            item = page_items[self.grid_cursor]
+            title = to_text(item.get("name") or u"")
+            self["gridHeader"].setText(u"{0}  \u2022  {1}".format(self.active_category_name, title))
         else:
-            self["gridFocus"].hide()
+            cat_count = self.total_backend_items or len(self.get_visible_items())
+            self["gridHeader"].setText(u"{0} ({1})".format(self.active_category_name, human_count(cat_count)))
 
     def key_left(self):
         if self.focus_area == "grid":
@@ -1836,7 +1857,7 @@ class GridBrowserScreen(AsyncScreen):
                 col = self.grid_cursor % 5
                 self.key_page_up()
                 prev_len = len(self.get_current_page_items())
-                self.grid_cursor = min(prev_len - 1, 5 + col)
+                self.grid_cursor = min(max(0, prev_len - 1), 5 + col)
                 self.update_focus()
 
     def key_down(self):
@@ -1848,14 +1869,24 @@ class GridBrowserScreen(AsyncScreen):
         else:
             row = self.grid_cursor // 5
             page_items = self.get_current_page_items()
-            if row == 0 and (self.grid_cursor + 5) < len(page_items):
-                self.grid_cursor += 5
-                self.update_focus()
+            if row == 0:
+                if (self.grid_cursor + 5) < len(page_items):
+                    self.grid_cursor += 5
+                    self.update_focus()
+                elif len(page_items) > 5:
+                    self.grid_cursor = len(page_items) - 1
+                    self.update_focus()
+                elif self.has_next_page():
+                    col = self.grid_cursor % 5
+                    self.key_page_down()
+                    next_len = len(self.get_current_page_items())
+                    self.grid_cursor = min(max(0, next_len - 1), col)
+                    self.update_focus()
             elif self.has_next_page():
                 col = self.grid_cursor % 5
                 self.key_page_down()
                 next_len = len(self.get_current_page_items())
-                self.grid_cursor = min(next_len - 1, col)
+                self.grid_cursor = min(max(0, next_len - 1), col)
                 self.update_focus()
 
     def _category_changed(self, idx):
@@ -1867,9 +1898,10 @@ class GridBrowserScreen(AsyncScreen):
 
     def key_ok(self):
         if self.focus_area == "categories":
-            self.focus_area = "grid"
-            self.grid_cursor = 0
-            self.update_focus()
+            if self.get_current_page_items():
+                self.focus_area = "grid"
+                self.grid_cursor = 0
+                self.update_focus()
         else:
             page_items = self.get_current_page_items()
             if self.grid_cursor < len(page_items):
