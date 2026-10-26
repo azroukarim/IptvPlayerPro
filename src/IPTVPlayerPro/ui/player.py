@@ -21,7 +21,7 @@ from .base import download_logo, pixmap
 from .skins import PLAYER_SKIN
 
 
-INFO_BAR_TIMEOUT = 5000
+INFO_BAR_TIMEOUT = 86400000  # 24 hours to keep info bar visible
 
 
 class LivePlayerScreen(Screen):

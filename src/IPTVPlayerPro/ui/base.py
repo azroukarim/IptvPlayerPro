@@ -346,6 +346,59 @@ def episode_card_entry(width, height, item, icon=None):
 
     return entries
 
+def episode_entry(width, height, item, icon=None):
+    """Compatibility alias for older code expecting 'episode_entry'."""
+    return episode_card_entry(width, height, item, icon)
+    """Episode card with 16:9 thumbnail, title, duration and rating stars."""
+    name = to_text(item.get("name") or _("Episode"))
+    duration = to_text(item.get("duration") or item.get("length") or u"")
+    rating = to_text(item.get("rating") or u"")
+
+    entries = [
+        MultiContentEntryRectangle(
+            pos=(0, 4), size=(width, height - 8),
+            backgroundColor="#241928", backgroundColorSelected="#5e1428",
+        )
+    ]
+
+    thumb_x, thumb_y, thumb_w, thumb_h = 10, 10, 144, 90
+    if icon is not None:
+        entries.append(MultiContentEntryPixmapAlphaTest(
+            pos=(thumb_x, thumb_y), size=(thumb_w, thumb_h), png=icon,
+        ))
+    else:
+        entries.append(MultiContentEntryRectangle(
+            pos=(thumb_x, thumb_y), size=(thumb_w, thumb_h),
+            backgroundColor="#140a18", backgroundColorSelected="#3a0d18",
+        ))
+
+    text_x = thumb_x + thumb_w + 16
+    text_w = width - text_x - 16
+
+    # Episode title
+    entries.append(MultiContentEntryText(
+        pos=(text_x, 14), size=(text_w, 32),
+        font=2, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+        text=name, color=WHITE, color_sel=WHITE,
+    ))
+
+    # Meta strip: duration + rating
+    meta_parts = []
+    if duration:
+        meta_parts.append(duration)
+    if rating:
+        meta_parts.append(u"★ {0}".format(rating))
+    meta_text = u"      ".join(meta_parts) if meta_parts else u""
+
+    if meta_text:
+        entries.append(MultiContentEntryText(
+            pos=(text_x, 56), size=(text_w, 24),
+            font=4, flags=RT_HALIGN_LEFT | RT_VALIGN_CENTER,
+            text=meta_text, color="#d0b0c4", color_sel="#f0b34a",
+        ))
+
+    return entries
+
 
 def channel_entry(width, height, number, title, icon=None, favorite=False,
                   bg=LIVE_ROW_BG, selected_bg=LIVE_ROW_SEL):
